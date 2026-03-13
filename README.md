@@ -1,4 +1,3 @@
-
   # Academic Truth Engine UI
 
   Academic Truth Engine UI is a Vite + React frontend with a FastAPI backend bridge for running research and assignment workflow actions.
