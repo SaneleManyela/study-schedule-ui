@@ -76,7 +76,7 @@ export function AdminPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/research/workbench")}
               className="hover:bg-primary/10 hover:text-primary"
             >
               <ArrowLeft className="h-4 w-4 mr-2" />

@@ -11,10 +11,23 @@
 
   ## App routes
 
-  - `/`: Truth Engine workflow page
-  - `/workbench`: Legacy workbench page
-  - `/ask`: Ask page
-  - `/admin`: Admin page
+  The UI is organized as two systems:
+
+  - System 1 (Evidence-first research pipeline)
+    - `/research/workbench`: main research pipeline interface
+    - `/research/ask`: focused Q&A interface
+    - `/research/admin`: research configuration interface
+
+  - System 2 (Assignment workflow studio)
+    - `/assignment/workflow`: assignment execution and quality workflow
+
+  Entry route:
+
+  - `/`: Systems home (choose between the two systems)
+
+  Legacy aliases kept for compatibility:
+
+  - `/workbench`, `/ask`, `/admin`, `/truth-engine`
 
   ## Prerequisites
 

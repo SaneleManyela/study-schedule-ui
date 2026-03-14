@@ -4,6 +4,7 @@ import {
   MenubarContent,
   MenubarItem,
   MenubarMenu,
+  MenubarSeparator,
   MenubarTrigger,
 } from "./ui/menubar";
 
@@ -25,36 +26,41 @@ export function AppMenuBar({ onRefresh }: AppMenuBarProps) {
         </MenubarContent>
       </MenubarMenu>
       <MenubarMenu>
-        <MenubarTrigger
-          className="cursor-pointer"
-          onClick={() => navigate("/")}
-        >
-          Truth Engine
-        </MenubarTrigger>
+        <MenubarTrigger className="cursor-pointer">Systems</MenubarTrigger>
+        <MenubarContent>
+          <MenubarItem onClick={() => navigate("/")} className="cursor-pointer">
+            Systems Home
+          </MenubarItem>
+          <MenubarSeparator />
+          <MenubarItem onClick={() => navigate("/research/workbench")} className="cursor-pointer">
+            Research Pipeline System
+          </MenubarItem>
+          <MenubarItem onClick={() => navigate("/assignment/workflow")} className="cursor-pointer">
+            Assignment Workflow System
+          </MenubarItem>
+        </MenubarContent>
       </MenubarMenu>
       <MenubarMenu>
-        <MenubarTrigger
-          className="cursor-pointer"
-          onClick={() => navigate("/workbench")}
-        >
-          Workbench
-        </MenubarTrigger>
+        <MenubarTrigger className="cursor-pointer">Research</MenubarTrigger>
+        <MenubarContent>
+          <MenubarItem onClick={() => navigate("/research/workbench")} className="cursor-pointer">
+            Workbench
+          </MenubarItem>
+          <MenubarItem onClick={() => navigate("/research/ask")} className="cursor-pointer">
+            Ask
+          </MenubarItem>
+          <MenubarItem onClick={() => navigate("/research/admin")} className="cursor-pointer">
+            Admin
+          </MenubarItem>
+        </MenubarContent>
       </MenubarMenu>
       <MenubarMenu>
-        <MenubarTrigger
-          className="cursor-pointer"
-          onClick={() => navigate("/ask")}
-        >
-          Ask
-        </MenubarTrigger>
-      </MenubarMenu>
-      <MenubarMenu>
-        <MenubarTrigger
-          className="cursor-pointer"
-          onClick={() => navigate("/admin")}
-        >
-          Admin
-        </MenubarTrigger>
+        <MenubarTrigger className="cursor-pointer">Assignment</MenubarTrigger>
+        <MenubarContent>
+          <MenubarItem onClick={() => navigate("/assignment/workflow")} className="cursor-pointer">
+            Workflow Studio
+          </MenubarItem>
+        </MenubarContent>
       </MenubarMenu>
     </Menubar>
   );

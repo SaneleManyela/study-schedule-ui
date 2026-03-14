@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AppMenuBar } from "../components/AppMenuBar";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -49,21 +48,6 @@ export function AskPage() {
   const [latestResponse, setLatestResponse] = useState<ResearchResponse | null>(
     () => loadQueryHistory()[0]?.response ?? null,
   );
-
-  const handleRefresh = () => {
-    const nextDocuments = loadDocuments();
-    const nextSettings = loadResearchSettings();
-    const nextProfile = loadResearchProfile();
-    const nextHistory = loadQueryHistory();
-
-    setDocuments(nextDocuments);
-    setSettings(nextSettings);
-    setProfile(nextProfile);
-    setHistory(nextHistory);
-    setLatestResponse(nextHistory[0]?.response ?? null);
-    setConsoleLines(["Ask page refreshed from local workspace state."]);
-    toast.success("Ask page refreshed");
-  };
 
   const handleAsk = async () => {
     const trimmedQuestion = question.trim();
@@ -126,9 +110,7 @@ export function AskPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <AppMenuBar onRefresh={handleRefresh} />
-      <div className="relative flex-1 overflow-hidden">
+    <div className="relative flex-1 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(65,105,225,0.22),transparent_34%),radial-gradient(circle_at_12%_30%,rgba(255,255,255,0.05),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_40%)]" />
         <div className="relative max-w-7xl mx-auto px-6 py-8 space-y-6">
           <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
@@ -322,6 +304,5 @@ export function AskPage() {
           </section>
         </div>
       </div>
-    </div>
   );
 }

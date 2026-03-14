@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { AppMenuBar } from "../components/AppMenuBar";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -61,16 +60,6 @@ export function MainPage() {
     () => loadQueryHistory()[0]?.response ?? null,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleRefresh = () => {
-    setDocuments(loadDocuments());
-    setSettings(loadResearchSettings());
-    setProfile(loadResearchProfile());
-    const nextHistory = loadQueryHistory();
-    setHistory(nextHistory);
-    setLatestResponse(nextHistory[0]?.response ?? null);
-    toast.success("Workbench refreshed");
-  };
 
   const updateDocuments = (nextDocuments: ResearchDocument[]) => {
     setDocuments(nextDocuments);
@@ -211,9 +200,7 @@ export function MainPage() {
   const readyCount = stages.filter((stage) => stage.status === "ready").length;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <AppMenuBar onRefresh={handleRefresh} />
-      <div className="relative flex-1 overflow-hidden">
+    <div className="relative flex-1 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(65,105,225,0.24),transparent_34%),radial-gradient(circle_at_80%_20%,rgba(28,94,172,0.18),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_45%)]" />
         <div className="relative max-w-7xl mx-auto px-6 py-8 space-y-6">
           <section className="grid gap-6 xl:grid-cols-[1.35fr_0.85fr]">
@@ -553,6 +540,5 @@ export function MainPage() {
           </section>
         </div>
       </div>
-    </div>
   );
 }

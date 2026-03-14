@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AppMenuBar } from "../components/AppMenuBar";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -262,17 +261,6 @@ export function TruthEnginePage() {
     localStorage.setItem(WORKFLOW_AUDIT_KEY, JSON.stringify(next));
   };
 
-  const refreshPage = () => {
-    setAccountEmail(loadEmail());
-    setEditorHtml(loadDraft());
-    setStepStatus(loadStepStatus());
-    const rawNotes = localStorage.getItem(WORKFLOW_NOTES_KEY);
-    setWorkflowNotes(rawNotes ? (JSON.parse(rawNotes) as Record<number, string>) : {});
-    const rawAudit = localStorage.getItem(WORKFLOW_AUDIT_KEY);
-    setAuditTrail(rawAudit ? (JSON.parse(rawAudit) as StepAuditEntry[]) : []);
-    toast.success("Truth Engine refreshed");
-  };
-
   const saveEmail = () => {
     if (!accountEmail.trim()) {
       toast.error("Email is required for tool account setup");
@@ -493,9 +481,7 @@ export function TruthEnginePage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <AppMenuBar onRefresh={refreshPage} />
-      <div className="relative flex-1 overflow-hidden">
+    <div className="relative flex-1 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_10%,rgba(65,105,225,0.24),transparent_32%),radial-gradient(circle_at_10%_25%,rgba(255,255,255,0.06),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_46%)]" />
         <div className="relative max-w-7xl mx-auto px-6 py-8 space-y-6">
           <Card className="border-primary/30 bg-card/75 backdrop-blur overflow-hidden">
@@ -741,6 +727,5 @@ export function TruthEnginePage() {
           </Card>
         </div>
       </div>
-    </div>
   );
 }
