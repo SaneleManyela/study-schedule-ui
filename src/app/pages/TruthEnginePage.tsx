@@ -53,6 +53,17 @@ const EDITOR_KEY = "truthEngineDraft";
 const STATUS_KEY = "truthEngineStepStatus";
 const WORKFLOW_NOTES_KEY = "truthEngineWorkflowNotes";
 const WORKFLOW_AUDIT_KEY = "truthEngineWorkflowAudit";
+const REQUEST_OUTPUT_KEY = "truthEngineRequestOutput";
+
+type RequestOutputStatus = "idle" | "running" | "success" | "blocked" | "error";
+
+interface RequestOutput {
+  status: RequestOutputStatus;
+  title: string;
+  summary: string;
+  details: string[];
+  updatedAt: string;
+}
 
 const tools: ToolEntry[] = [
   {
@@ -238,7 +249,13 @@ export function TruthEnginePage() {
       return [];
     }
   });
+  const [requestOutput, setRequestOutput] = useState<RequestOutput>(loadRequestOutput);
   const editorRef = useRef<HTMLDivElement | null>(null);
+
+  const updateRequestOutput = (next: RequestOutput) => {
+    setRequestOutput(next);
+    localStorage.setItem(REQUEST_OUTPUT_KEY, JSON.stringify(next));
+  };
 
   const writeAudit = (
     stepId: number,
@@ -288,9 +305,24 @@ export function TruthEnginePage() {
 
   const runAll = async () => {
     if (!accountEmail.trim()) {
+      updateRequestOutput({
+        status: "error",
+        title: "Workflow request blocked",
+        summary: "Add and save your email before running the workflow.",
+        details: ["Missing account email in the Truth Engine form."],
+        updatedAt: new Date().toISOString(),
+      });
       toast.error("Add and save your email before running the workflow");
       return;
     }
+
+    updateRequestOutput({
+      status: "running",
+      title: "Workflow request running",
+      summary: "Submitting request to backend workflow endpoint.",
+      details: [`Email: ${accountEmail.trim()}`],
+      updatedAt: new Date().toISOString(),
+    });
 
     try {
       const plan = await runWorkflow(accountEmail.trim());
@@ -317,15 +349,41 @@ export function TruthEnginePage() {
       localStorage.setItem(STATUS_KEY, JSON.stringify(nextStatuses));
       localStorage.setItem(WORKFLOW_NOTES_KEY, JSON.stringify(nextNotes));
 
+      const detailLines = plan.steps
+        .slice(0, 8)
+        .map((step) => `Step ${step.id} (${step.status}): ${step.message}`);
+
       if (plan.status === "blocked") {
+        updateRequestOutput({
+          status: "blocked",
+          title: "Workflow response: blocked",
+          summary: plan.summary,
+          details: detailLines,
+          updatedAt: new Date().toISOString(),
+        });
         writeAudit(0, "workflow-run", "blocked", plan.summary);
         toast.error(plan.summary);
         return;
       }
 
+      updateRequestOutput({
+        status: "success",
+        title: "Workflow response: ready",
+        summary: plan.summary,
+        details: detailLines,
+        updatedAt: new Date().toISOString(),
+      });
+
       toast.success("Workflow orchestration generated from FastAPI");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Workflow service error";
+      updateRequestOutput({
+        status: "error",
+        title: "Workflow request failed",
+        summary: message,
+        details: ["Backend call failed before a valid workflow plan was returned."],
+        updatedAt: new Date().toISOString(),
+      });
       writeAudit(0, "workflow-run", "blocked", message);
       toast.error(`Workflow runner failed: ${message}`);
     }
@@ -700,6 +758,52 @@ export function TruthEnginePage() {
           <Card className="border-primary/25 bg-card/70 backdrop-blur">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-primary">
+                <ListChecks className="h-5 w-5" />
+                Request Output
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm text-primary">{requestOutput.title}</p>
+                <Badge
+                  variant={
+                    requestOutput.status === "success"
+                      ? "default"
+                      : requestOutput.status === "running"
+                        ? "secondary"
+                        : "outline"
+                  }
+                  className={
+                    requestOutput.status === "error" || requestOutput.status === "blocked"
+                      ? "border-destructive/40 text-destructive"
+                      : ""
+                  }
+                >
+                  {requestOutput.status}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">{requestOutput.summary}</p>
+              {requestOutput.details.length > 0 ? (
+                <div className="space-y-2">
+                  {requestOutput.details.map((detail) => (
+                    <p
+                      key={detail}
+                      className="text-xs text-muted-foreground rounded-lg border border-border bg-background/35 p-2"
+                    >
+                      {detail}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Updated: {new Date(requestOutput.updatedAt).toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-primary/25 bg-card/70 backdrop-blur">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-primary">
                 <Clock3 className="h-5 w-5" />
                 Workflow Audit Trail
               </CardTitle>
@@ -728,4 +832,29 @@ export function TruthEnginePage() {
         </div>
       </div>
   );
+}
+
+function loadRequestOutput(): RequestOutput {
+  const raw = localStorage.getItem(REQUEST_OUTPUT_KEY);
+  if (!raw) {
+    return {
+      status: "idle",
+      title: "No workflow request yet",
+      summary: "Run All Steps to render backend output in this panel.",
+      details: [],
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  try {
+    return JSON.parse(raw) as RequestOutput;
+  } catch {
+    return {
+      status: "idle",
+      title: "No workflow request yet",
+      summary: "Run All Steps to render backend output in this panel.",
+      details: [],
+      updatedAt: new Date().toISOString(),
+    };
+  }
 }
