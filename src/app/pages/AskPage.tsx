@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   BookOpenText,
@@ -6,6 +6,7 @@ import {
   CircleDot,
   Clock3,
   FileText,
+  Loader2,
   MessageSquareText,
   ShieldCheck,
 } from "lucide-react";
@@ -41,13 +42,39 @@ export function AskPage() {
   const [profile, setProfile] = useState(() => loadResearchProfile());
   const [history, setHistory] = useState<QueryHistoryItem[]>(() => loadQueryHistory());
   const [question, setQuestion] = useState("");
+  const [activeQuestion, setActiveQuestion] = useState("");
   const [isRunning, setIsRunning] = useState(false);
+  const [requestStartedAt, setRequestStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [consoleLines, setConsoleLines] = useState<string[]>([
     "Ask page ready. Submit a grounded question to query the backend.",
   ]);
   const [latestResponse, setLatestResponse] = useState<ResearchResponse | null>(
     () => loadQueryHistory()[0]?.response ?? null,
   );
+  const elapsedToneClass =
+    elapsedSeconds > 10
+      ? "text-destructive"
+      : elapsedSeconds > 5
+        ? "text-amber-500"
+        : "text-muted-foreground";
+
+  useEffect(() => {
+    if (!isRunning || requestStartedAt === null) {
+      return;
+    }
+
+    const tick = () => {
+      setElapsedSeconds((Date.now() - requestStartedAt) / 1000);
+    };
+
+    tick();
+    const timerId = window.setInterval(tick, 100);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [isRunning, requestStartedAt]);
 
   const handleAsk = async () => {
     const trimmedQuestion = question.trim();
@@ -58,6 +85,10 @@ export function AskPage() {
     }
 
     setIsRunning(true);
+    setActiveQuestion(trimmedQuestion);
+    setRequestStartedAt(Date.now());
+    setElapsedSeconds(0);
+    setLatestResponse(null);
     setConsoleLines([
       "[1/4] Validating research question.",
       "[2/4] Loading sources and notebook settings.",
@@ -92,6 +123,9 @@ export function AskPage() {
         ...current,
       ].slice(0, 8));
       toast.error("Backend unavailable. Using fallback response.");
+    } finally {
+      setIsRunning(false);
+      setRequestStartedAt(null);
     }
 
     const entry: QueryHistoryItem = {
@@ -105,7 +139,6 @@ export function AskPage() {
     setHistory(nextHistory);
     saveQueryHistory(nextHistory);
     setLatestResponse(response);
-    setIsRunning(false);
     toast.success("Answer ready");
   };
 
@@ -253,7 +286,16 @@ export function AskPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {latestResponse ? (
+                  {isRunning ? (
+                    <div className="space-y-3 rounded-2xl border border-primary/25 bg-primary/5 p-4">
+                      <div className="flex items-center gap-2 text-primary">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-sm">Processing your question...</span>
+                      </div>
+                      <p className={`text-xs ${elapsedToneClass}`}>Elapsed: {elapsedSeconds.toFixed(1)}s</p>
+                      <p className="text-sm text-muted-foreground">{activeQuestion}</p>
+                    </div>
+                  ) : latestResponse ? (
                     <div className="space-y-4">
                       <div>
                         <h2 className="text-2xl text-primary">{latestResponse.title}</h2>

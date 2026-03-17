@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -15,6 +15,7 @@ import {
   FileText,
   FileUp,
   Link2,
+  Loader2,
   MessageSquareText,
   Radar,
   ShieldCheck,
@@ -51,8 +52,11 @@ export function MainPage() {
   const [history, setHistory] = useState<QueryHistoryItem[]>(() => loadQueryHistory());
   const [driveLink, setDriveLink] = useState("");
   const [question, setQuestion] = useState("");
+  const [activeQuestion, setActiveQuestion] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [requestStartedAt, setRequestStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [consoleLines, setConsoleLines] = useState<string[]>([
     "Research console initialized. Waiting for notebook inputs.",
   ]);
@@ -60,6 +64,29 @@ export function MainPage() {
     () => loadQueryHistory()[0]?.response ?? null,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const elapsedToneClass =
+    elapsedSeconds > 10
+      ? "text-destructive"
+      : elapsedSeconds > 5
+        ? "text-amber-500"
+        : "text-muted-foreground";
+
+  useEffect(() => {
+    if (!isRunning || requestStartedAt === null) {
+      return;
+    }
+
+    const tick = () => {
+      setElapsedSeconds((Date.now() - requestStartedAt) / 1000);
+    };
+
+    tick();
+    const timerId = window.setInterval(tick, 100);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [isRunning, requestStartedAt]);
 
   const updateDocuments = (nextDocuments: ResearchDocument[]) => {
     setDocuments(nextDocuments);
@@ -137,6 +164,11 @@ export function MainPage() {
     }
 
     setIsRunning(true);
+    const trimmedQuestion = question.trim();
+    setActiveQuestion(trimmedQuestion);
+    setRequestStartedAt(Date.now());
+    setElapsedSeconds(0);
+    setLatestResponse(null);
     setConsoleLines([
       "[1/4] Validating notebook inputs and environment settings.",
       "[2/4] Sending request to FastAPI backend.",
@@ -146,7 +178,7 @@ export function MainPage() {
 
     try {
       response = await queryResearch({
-        question: question.trim(),
+        question: trimmedQuestion,
         documents,
         settings,
         profile,
@@ -158,7 +190,7 @@ export function MainPage() {
       ].slice(0, 8));
     } catch (error) {
       response = createResearchResponse({
-        question: question.trim(),
+        question: trimmedQuestion,
         documents,
         settings,
         profile,
@@ -175,7 +207,7 @@ export function MainPage() {
 
     const entry: QueryHistoryItem = {
       id: `${Date.now()}-${Math.random()}`,
-      question: question.trim(),
+      question: trimmedQuestion,
       createdAt: new Date().toISOString(),
       response,
     };
@@ -186,6 +218,7 @@ export function MainPage() {
     setLatestResponse(response);
     setConsoleLines((current) => [response.title, ...current].slice(0, 8));
     setIsRunning(false);
+    setRequestStartedAt(null);
     toast.success("Question processed through workbench");
   };
 
@@ -457,7 +490,16 @@ export function MainPage() {
 
                     <div className="rounded-2xl border border-border bg-background/35 p-4 min-h-[220px]">
                       <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">Latest response</p>
-                      {latestResponse ? (
+                      {isRunning ? (
+                        <div className="mt-4 space-y-3 rounded-2xl border border-primary/25 bg-primary/5 p-4">
+                          <div className="flex items-center gap-2 text-primary">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span className="text-sm">Running research query...</span>
+                          </div>
+                          <p className={`text-xs ${elapsedToneClass}`}>Elapsed: {elapsedSeconds.toFixed(1)}s</p>
+                          <p className="text-sm text-muted-foreground">{activeQuestion}</p>
+                        </div>
+                      ) : latestResponse ? (
                         <div className="mt-4 space-y-4">
                           <div>
                             <h3 className="text-xl text-primary">{latestResponse.title}</h3>
