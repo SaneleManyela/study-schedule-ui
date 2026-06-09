@@ -1,30 +1,37 @@
-import type {
-  ResearchDocument,
-  ResearchProfile,
-  ResearchResponse,
-  ResearchSettings,
-} from "./workbench";
-
-export interface WorkflowStepRunResult {
-  id: number;
+export interface ScheduleItem {
+  id: string;
   title: string;
-  status: "todo" | "in-progress" | "done" | "blocked";
-  action: string;
-  message: string;
-  launchUrl: string | null;
+  description: string;
+  startAt: string;
+  endAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface WorkflowRunResponse {
-  status: "ready" | "blocked";
-  summary: string;
-  steps: WorkflowStepRunResult[];
+export interface StudyPlanItem {
+  id: string;
+  title: string;
+  goal: string;
+  sessionDate: string;
+  durationMinutes: number;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-interface QueryPayload {
-  question: string;
-  documents: ResearchDocument[];
-  settings: ResearchSettings;
-  profile: ResearchProfile;
+export interface CreateSchedulePayload {
+  title: string;
+  description: string;
+  startAt: string;
+  endAt: string;
+}
+
+export interface CreateStudyPlanPayload {
+  title: string;
+  goal: string;
+  sessionDate: string;
+  durationMinutes: number;
+  notes: string;
 }
 
 const API_BASE_URL =
@@ -32,56 +39,41 @@ const API_BASE_URL =
     ?.VITE_API_BASE_URL as string | undefined)?.trim() ||
   "http://127.0.0.1:8000";
 
-function normalizeResearchResponse(raw: unknown): ResearchResponse {
-  const value = (raw ?? {}) as Partial<ResearchResponse>;
-
-  return {
-    title: typeof value.title === "string" && value.title.trim().length > 0
-      ? value.title
-      : "Research response received",
-    summary: typeof value.summary === "string" && value.summary.trim().length > 0
-      ? value.summary
-      : "The backend returned an empty summary.",
-    evidence: Array.isArray(value.evidence)
-      ? value.evidence.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-      : [],
-    nextAction: typeof value.nextAction === "string" && value.nextAction.trim().length > 0
-      ? value.nextAction
-      : "Review backend logs for additional response details.",
-  };
-}
-
-export async function queryResearch(payload: QueryPayload): Promise<ResearchResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/research/query`, {
-    method: "POST",
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
     },
+    ...init,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+export function listSchedules(): Promise<ScheduleItem[]> {
+  return requestJson<ScheduleItem[]>("/api/schedules");
+}
+
+export function createSchedule(payload: CreateSchedulePayload): Promise<ScheduleItem> {
+  return requestJson<ScheduleItem>("/api/schedules", {
+    method: "POST",
     body: JSON.stringify(payload),
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Backend request failed with status ${response.status}`);
-  }
-
-  const data = await response.json();
-  return normalizeResearchResponse(data);
 }
 
-export async function runWorkflow(email: string): Promise<WorkflowRunResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/workflow/run`, {
+export function listStudyPlans(): Promise<StudyPlanItem[]> {
+  return requestJson<StudyPlanItem[]>("/api/study-plans");
+}
+
+export function createStudyPlan(payload: CreateStudyPlanPayload): Promise<StudyPlanItem> {
+  return requestJson<StudyPlanItem>("/api/study-plans", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify(payload),
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Workflow request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as WorkflowRunResponse;
 }

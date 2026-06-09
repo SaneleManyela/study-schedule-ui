@@ -1,102 +1,90 @@
 # FastAPI backend
 
-This service is the Python bridge between the React workbench and the notebook-style research workflow.
+This backend serves the calendar and study planner frontend using Firestore for persistence.
 
 ## What this backend does
 
-1. Receives research requests from the Ask/Main frontend pages.
-2. Validates incoming payloads using Pydantic schemas.
-3. Returns structured response objects the frontend can render.
-4. Generates assignment workflow step plans for the Truth Engine page.
+1. Exposes health, schedule, and study-plan endpoints.
+2. Validates payloads with Pydantic.
+3. Reads and writes planner data in Firestore.
 
 ## Project layout
 
-- backend/app/main.py: FastAPI app setup, CORS, and route handlers.
-- backend/app/models.py: Pydantic request/response schema models.
-- backend/app/service.py: Business logic for research and workflow endpoints.
+- `backend/app/main.py`: FastAPI app setup and route handlers.
+- `backend/app/models.py`: Request/response schema models.
+- `backend/app/service.py`: Firestore access logic.
 
 ## Local setup
-
-1. Create a virtual environment in the repository root.
-2. Activate the environment.
-3. Install backend dependencies.
 
 ```powershell
 pip install -r backend/requirements.txt
 ```
 
+## Firebase configuration
+
+Use one of these approaches:
+
+1. Set `GOOGLE_APPLICATION_CREDENTIALS` to a service-account JSON file path.
+2. Set `FIREBASE_SERVICE_ACCOUNT_JSON` with raw service-account JSON.
+
+Optional:
+
+- Set `FIREBASE_PROJECT_ID` to pin a project.
+
 ## Run the API
-
-Recommended command:
-
-```powershell
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Alternative command (also valid when launcher scripts are healthy):
 
 ```powershell
 uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-The API will be available at http://127.0.0.1:8000.
-
 ## API endpoints
 
 ### GET /api/health
 
-Returns a lightweight status payload:
+Returns:
 
 ```json
 {
-	"status": "ok",
-	"mode": "bridge"
+  "status": "ok",
+  "mode": "study-planner"
 }
 ```
 
-### POST /api/research/query
+### GET /api/schedules
 
-Consumes question + source documents + runtime settings + profile context and returns:
+Returns all schedule entries ordered by start time.
 
-- title
-- summary
-- evidence array
-- nextAction
+### POST /api/schedules
 
-Current behavior:
+Creates a schedule entry.
 
-- If required runtime inputs are missing (for example no token or no sources), the response explains what is missing.
-- If inputs are present, the response confirms handoff readiness.
+Request body:
 
-Note: this endpoint is currently a bridge/stub for notebook execution readiness. Replace logic in backend/app/service.py with your real retrieval + inference pipeline when integrating production notebook execution.
+```json
+{
+  "title": "Biology deep work",
+  "description": "Review chapter 4 notes",
+  "startAt": "2026-06-10T09:00:00",
+  "endAt": "2026-06-10T10:30:00"
+}
+```
 
-### POST /api/workflow/run
+### GET /api/study-plans
 
-Consumes an email and returns a workflow plan with step-by-step guidance:
+Returns all study plans ordered by session date.
 
-- id
-- title
-- status
-- action
-- message
-- launchUrl (optional)
+### POST /api/study-plans
 
-Current behavior:
+Creates a study plan entry.
 
-- Invalid email format returns a blocked workflow response.
-- Valid email returns a generated plan for external tools and manual steps.
+Request body:
 
-## CORS behavior
-
-The backend currently allows these dev frontend origins:
-
-- http://localhost:5173
-- http://127.0.0.1:5173
-
-If your frontend runs on a different origin, update the CORS allow_origins list in backend/app/main.py.
-
-## Frontend integration notes
-
-- The frontend calls this backend via /api/research/query and /api/workflow/run.
-- The UI now includes in-flight loaders and elapsed-time indicators while requests are processing.
-- If you see requests in backend logs but no visible frontend result, check browser console/network payload shape and confirm the response contains title, summary, evidence, and nextAction fields.
+```json
+{
+  "title": "Exam prep day 1",
+  "goal": "Finish chapters 1-2",
+  "sessionDate": "2026-06-10",
+  "durationMinutes": 90,
+  "notes": "Start with hardest topic"
+}
+```

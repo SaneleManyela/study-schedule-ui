@@ -1,32 +1,23 @@
-"""FastAPI application entrypoint for the Academic Truth Engine backend.
-
-This module wires three main concerns:
-1) App construction and metadata.
-2) CORS policy so the Vite frontend can call this API in development.
-3) HTTP route handlers that delegate core logic to the service layer.
-
-The route handlers intentionally stay thin. Business logic is implemented in
-`service.py`, while request/response schemas are declared in `models.py`.
-"""
+"""FastAPI application entrypoint for the calendar and study planner backend."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .models import (
     HealthResponse,
-    ResearchQueryRequest,
-    ResearchResponse,
-    WorkflowRunRequest,
-    WorkflowRunResponse,
+    ScheduleCreate,
+    ScheduleItem,
+    StudyPlanCreate,
+    StudyPlanItem,
 )
-from .service import build_response, run_assignment_workflow
+from .service import create_schedule, create_study_plan, list_schedules, list_study_plans
 
 
 # Create the FastAPI app object and expose API metadata visible in docs.
 app = FastAPI(
-    title="Academic Truth Engine API",
+    title="Study Planner API",
     version="0.1.0",
-    description="FastAPI bridge between the React workbench and Python notebook workflow.",
+    description="FastAPI service for calendar schedules and study plans backed by Firestore.",
 )
 
 # Allow the local React dev server origins to access this API.
@@ -58,37 +49,32 @@ def health() -> HealthResponse:
     """
 
     # Keep this endpoint deterministic and side-effect free.
-    return HealthResponse(status="ok", mode="bridge")
+    return HealthResponse(status="ok", mode="study-planner")
 
 
-@app.post("/api/research/query", response_model=ResearchResponse)
-def research_query(payload: ResearchQueryRequest) -> ResearchResponse:
-    """Handle Ask-page research queries.
+@app.get("/api/schedules", response_model=list[ScheduleItem])
+def get_schedules() -> list[ScheduleItem]:
+    """Return all schedule entries from Firestore."""
 
-    The endpoint validates input via Pydantic, then delegates response building
-    to the service layer. This keeps HTTP concerns and domain rules separated.
-
-    Args:
-        payload: Question + sources + settings + profile context.
-
-    Returns:
-        ResearchResponse: Structured response packet rendered by the frontend.
-    """
-
-    # Delegate to service logic so this module remains an API shell.
-    return build_response(payload)
+    return list_schedules()
 
 
-@app.post("/api/workflow/run", response_model=WorkflowRunResponse)
-def workflow_run(payload: WorkflowRunRequest) -> WorkflowRunResponse:
-    """Generate workflow step guidance for assignment execution.
+@app.post("/api/schedules", response_model=ScheduleItem)
+def post_schedule(payload: ScheduleCreate) -> ScheduleItem:
+    """Create a schedule entry in Firestore."""
 
-    Args:
-        payload: Email used for account/tool workflow instructions.
+    return create_schedule(payload)
 
-    Returns:
-        WorkflowRunResponse: Ordered steps with statuses and launch URLs.
-    """
 
-    # Delegate to service logic for step orchestration and validation.
-    return run_assignment_workflow(payload)
+@app.get("/api/study-plans", response_model=list[StudyPlanItem])
+def get_study_plans() -> list[StudyPlanItem]:
+    """Return all study plan entries from Firestore."""
+
+    return list_study_plans()
+
+
+@app.post("/api/study-plans", response_model=StudyPlanItem)
+def post_study_plan(payload: StudyPlanCreate) -> StudyPlanItem:
+    """Create a study plan entry in Firestore."""
+
+    return create_study_plan(payload)

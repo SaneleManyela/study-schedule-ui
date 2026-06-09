@@ -1,98 +1,73 @@
-  # Academic Truth Engine UI
+# Study Planner UI
 
-  Academic Truth Engine UI is a Vite + React frontend with a FastAPI backend bridge for running research and assignment workflow actions.
+This repository now contains a focused calendar and study schedule application.
 
-  ## What this repo includes
+## What this repo includes
 
-  - `src/`: React application UI and routing
-  - `backend/`: FastAPI service used by the frontend
-  - `guidelines/`: Project guidelines and reference material
-  - `dist/`: Build output (generated frontend assets)
+- `src/`: React UI for calendar, schedules, and study plans.
+- `backend/`: FastAPI service with Firestore-backed planner endpoints.
+- `guidelines/`: Project reference material.
 
-  ## App routes
+## App route
 
-  The UI is organized as two systems:
+- `/`: Calendar and study planner interface.
 
-  - System 1 (Evidence-first research pipeline)
-    - `/research/workbench`: main research pipeline interface
-    - `/research/ask`: focused Q&A interface
-    - `/research/admin`: research configuration interface
+## Prerequisites
 
-  - System 2 (Assignment workflow studio)
-    - `/assignment/workflow`: assignment execution and quality workflow
+- Node.js 18+ (LTS recommended)
+- npm 9+
+- Python 3.11+
+- Firebase project with Firestore enabled
 
-  Entry route:
+## Quick start
 
-  - `/`: Systems home (choose between the two systems)
+Install frontend dependencies:
 
-  Legacy aliases kept for compatibility:
+```powershell
+npm install
+```
 
-  - `/workbench`, `/ask`, `/admin`, `/truth-engine`
+Create and activate a Python virtual environment:
 
-  ## Prerequisites
+```powershell
+python -m venv .venv
+& .\.venv\Scripts\Activate.ps1
+```
 
-  - Node.js 18+ (or newer LTS)
-  - npm 9+
-  - Python 3.11+ recommended
+Install backend dependencies:
 
-  ## Quick start
+```powershell
+pip install -r backend/requirements.txt
+```
 
-  Install frontend dependencies:
+Configure Firebase authentication (one option):
 
-  ```powershell
-  npm install
-  ```
+1. Set `GOOGLE_APPLICATION_CREDENTIALS` to your service-account JSON path.
+2. Or set `FIREBASE_SERVICE_ACCOUNT_JSON` with raw JSON.
 
-  Create and activate a Python virtual environment (optional but recommended):
+Optional:
 
-  ```powershell
-  python -m venv .venv
-  & .\.venv\Scripts\Activate.ps1
-  ```
+- Set `FIREBASE_PROJECT_ID` if you want to force the project ID.
+- Set `VITE_API_BASE_URL` for frontend API routing.
 
-  Install backend dependencies:
+Start backend API:
 
-  ```powershell
-  pip install -r backend/requirements.txt
-  ```
+```powershell
+uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+```
 
-  Start backend API:
+In a second terminal, start the frontend:
 
-  ```powershell
-  uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
-  ```
+```powershell
+npm run dev
+```
 
-  In a second terminal, start the frontend:
+## Backend API
 
-  ```powershell
-  npm run dev
-  ```
+Base URL default: `http://127.0.0.1:8000`
 
-  Frontend default URL: `http://127.0.0.1:5173`
-
-  ## Frontend scripts
-
-  - `npm run dev`: start development server
-  - `npm run build`: create production build
-
-  ## Backend API
-
-  Base URL (default): `http://127.0.0.1:8000`
-
-  - `GET /api/health`: health check
-  - `POST /api/research/query`: returns a research response packet
-  - `POST /api/workflow/run`: returns assignment workflow execution plan
-
-  ## Environment configuration
-
-  The frontend uses this variable for API requests:
-
-  - `VITE_API_BASE_URL` (optional)
-
-  If not set, the app uses `http://127.0.0.1:8000`.
-
-  ## Notes
-
-  - CORS is currently configured for `http://localhost:5173` and `http://127.0.0.1:5173` in `backend/app/main.py`.
-  - The backend service logic is in `backend/app/service.py`.
-  
+- `GET /api/health`
+- `GET /api/schedules`
+- `POST /api/schedules`
+- `GET /api/study-plans`
+- `POST /api/study-plans`

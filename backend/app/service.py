@@ -1,206 +1,157 @@
-"""Service-layer business logic for backend endpoints.
+"""Firestore data access helpers for study schedules and study plans."""
 
-This module intentionally contains no FastAPI route decorators. Instead, it
-implements pure functions that receive validated Pydantic models and return
-Pydantic response objects.
+from __future__ import annotations
 
-Current role in the project:
-1) Provide a readiness-style response for research queries.
-2) Produce a workflow plan for assignment orchestration.
+import json
+import os
+from datetime import UTC, datetime
+from typing import Any
 
-Future role in production:
-- Replace readiness/stub logic with real notebook execution, retrieval, and
-    model inference, while preserving stable response schemas.
-"""
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-import re
-
-from .models import (
-    ResearchQueryRequest,
-    ResearchResponse,
-    WorkflowRunRequest,
-    WorkflowRunResponse,
-    WorkflowStepResult,
-)
+from .models import ScheduleCreate, ScheduleItem, StudyPlanCreate, StudyPlanItem
 
 
-# Canonical workflow sequence for the Truth Engine orchestration UI.
-#
-# Tuple shape:
-#   (step_id, title, launch_url, action)
-#
-# action values:
-# - "open-url": Frontend should present/launch external tool link.
-# - "manual": User performs work directly in editor/workbench.
-WORKFLOW_STEPS: list[tuple[int, str, str | None, str]] = [
-    (1, "Upload assignment brief and rubric to NotebookLM", "https://notebooklm.google.com", "open-url"),
-    (2, "Research topic in Perplexity with citations", "https://perplexity.ai", "open-url"),
-    (3, "Use Claude for structured outline", "https://claude.ai", "open-url"),
-    (4, "Write the essay draft", None, "manual"),
-    (5, "Send clean text to bolt.new custom app", "https://bolt.new", "open-url"),
-    (6, "Re-check with NotebookLM", "https://notebooklm.google.com", "open-url"),
-    (7, "Run Ryne review pass", "https://ryne.ai", "open-url"),
-    (8, "Validate citations with Citely", "https://citely.ai", "open-url"),
-    (9, "Manually revise flagged sections", None, "manual"),
-    (10, "Create version history in DripWriter", "https://dripwriter.com", "open-url"),
-    (11, "Final Ryne pass", "https://ryne.ai", "open-url"),
-]
+def _parse_iso_datetime(value: str) -> datetime:
+    """Parse an ISO datetime string and normalize it to UTC."""
+
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
-def _is_valid_email(email: str) -> bool:
-    """Return whether an email address appears valid using a basic regex.
+def _to_iso(value: Any) -> str:
+    """Convert Firestore timestamp-like objects to ISO-8601 strings."""
 
-    Notes:
-    - This is a pragmatic format check, not a full RFC-compliant parser.
-    - Good enough for workflow gating in this prototype backend.
-    """
-
-    # Keep the pattern strict enough for common address formats.
-    pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
-    # re.match returns a match object or None; convert to bool.
-    return re.match(pattern, email) is not None
+    if isinstance(value, datetime):
+        return value.astimezone(UTC).isoformat()
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def build_response(payload: ResearchQueryRequest) -> ResearchResponse:
-    """Build a structured research response from frontend payload inputs.
+def _get_firestore_client() -> firestore.Client:
+    """Initialize Firebase Admin app and return Firestore client."""
 
-    This function currently acts as a readiness bridge rather than running full
-    retrieval/inference. It confirms whether the minimum prerequisites exist and
-    returns user-facing guidance.
+    if not firebase_admin._apps:
+        project_id = os.getenv("FIREBASE_PROJECT_ID", "").strip()
+        service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
 
-    Args:
-        payload: Validated research query request.
+        if service_account_json:
+            creds = credentials.Certificate(json.loads(service_account_json))
+            firebase_admin.initialize_app(creds, options={"projectId": project_id} if project_id else None)
+        else:
+            firebase_admin.initialize_app(options={"projectId": project_id} if project_id else None)
 
-    Returns:
-        ResearchResponse: Ready-state or not-ready guidance payload.
-    """
+    return firestore.client()
 
-    # Determine whether required runtime inputs are present.
-    has_sources = len(payload.documents) > 0
-    has_token = bool(payload.settings.replicateApiToken.strip())
 
-    # Keep evidence text compact by listing up to the first three source names.
-    source_names = ", ".join(doc.name for doc in payload.documents[:3])
+def list_schedules() -> list[ScheduleItem]:
+    """Fetch all schedule entries ordered by start time."""
 
-    # Build a human-readable list of missing prerequisites.
-    missing: list[str] = []
-    if not has_token:
-        missing.append("a Replicate API token")
-    if not has_sources:
-        missing.append("at least one source PDF or Drive link")
+    client = _get_firestore_client()
+    docs = client.collection("schedules").order_by("startAt").stream()
 
-    # If any prerequisites are missing, return an explanatory readiness response.
-    if missing:
-        return ResearchResponse(
-            title="Notebook execution is not ready",
-            summary=(
-                "FastAPI received your request successfully, but the runtime inputs are incomplete. "
-                f"Please add {' and '.join(missing)} before running the notebook pipeline."
-            ),
-            evidence=[
-                # Echo back key context so users can self-diagnose quickly.
-                f"Question captured: {payload.question}",
-                f"Configured model: {payload.settings.preferredModel}",
-                f"Notebook target: {payload.settings.notebookPath}",
-            ],
-            nextAction=(
-                # Explicitly guide where to connect real execution logic.
-                "Connect this endpoint to a Python runner that executes notebook Steps 3-6 after "
-                "source ingestion and model configuration are complete."
-            ),
+    items: list[ScheduleItem] = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        items.append(
+            ScheduleItem(
+                id=doc.id,
+                title=str(data.get("title", "")),
+                description=str(data.get("description", "")),
+                startAt=_to_iso(data.get("startAt")),
+                endAt=_to_iso(data.get("endAt")),
+                createdAt=_to_iso(data.get("createdAt")),
+                updatedAt=_to_iso(data.get("updatedAt")),
+            )
         )
+    return items
 
-    # If prerequisites are present, return a success-style handoff summary.
-    return ResearchResponse(
-        title="FastAPI handoff completed",
-        summary=(
-            "The request reached FastAPI and the notebook prerequisites are present. "
-            "The endpoint is now ready for integrating the real retrieval and inference calls."
-        ),
-        evidence=[
-            # Include question and selected runtime context for visibility.
-            f"Question queued: {payload.question}",
-            f"Primary sources: {source_names or f'{len(payload.documents)} sources ready'}",
-            f"Project: {payload.profile.projectTitle or 'Academic Truth Engine'}",
-            f"Model handoff: {payload.settings.preferredModel}",
-        ],
-        nextAction=(
-            # This is the key implementation handoff note for developers.
-            "Replace build_response with the real notebook execution path and return grounded citations "
-            "from your backend retrieval chain."
-        ),
+
+def create_schedule(payload: ScheduleCreate) -> ScheduleItem:
+    """Create a new schedule entry in Firestore."""
+
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    start_at = _parse_iso_datetime(payload.startAt)
+    end_at = _parse_iso_datetime(payload.endAt)
+
+    doc_ref = client.collection("schedules").document()
+    doc_ref.set(
+        {
+            "title": payload.title.strip(),
+            "description": payload.description.strip(),
+            "startAt": start_at,
+            "endAt": end_at,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+    )
+    data = doc_ref.get().to_dict() or {}
+    return ScheduleItem(
+        id=doc_ref.id,
+        title=str(data.get("title", payload.title.strip())),
+        description=str(data.get("description", payload.description.strip())),
+        startAt=_to_iso(data.get("startAt", start_at)),
+        endAt=_to_iso(data.get("endAt", end_at)),
+        createdAt=_to_iso(data.get("createdAt", now)),
+        updatedAt=_to_iso(data.get("updatedAt", now)),
     )
 
 
-def run_assignment_workflow(payload: WorkflowRunRequest) -> WorkflowRunResponse:
-    """Generate workflow step-by-step plan for assignment execution.
+def list_study_plans() -> list[StudyPlanItem]:
+    """Fetch all study plan entries ordered by session date."""
 
-    The plan is dynamic only by email validity today. If the email passes,
-    each workflow step is emitted with action metadata and optional launch URL.
+    client = _get_firestore_client()
+    docs = client.collection("study_plans").order_by("sessionDate").stream()
 
-    Args:
-        payload: Validated workflow run request containing user email.
-
-    Returns:
-        WorkflowRunResponse: Blocked response or ready workflow plan.
-    """
-
-    # Normalize once so all subsequent messages use consistent formatting.
-    normalized_email = payload.email.strip().lower()
-
-    # Hard stop early when email format is not valid enough for workflow use.
-    if not _is_valid_email(normalized_email):
-        return WorkflowRunResponse(
-            status="blocked",
-            summary="Workflow blocked because a valid account email is required.",
-            steps=[
-                WorkflowStepResult(
-                    # Step 0 denotes pre-workflow validation gate.
-                    id=0,
-                    title="Account setup",
-                    status="blocked",
-                    action="validate-email",
-                    message="Provide a valid email format before workflow orchestration can proceed.",
-                )
-            ],
+    items: list[StudyPlanItem] = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        items.append(
+            StudyPlanItem(
+                id=doc.id,
+                title=str(data.get("title", "")),
+                goal=str(data.get("goal", "")),
+                sessionDate=str(data.get("sessionDate", "")),
+                durationMinutes=int(data.get("durationMinutes", 0)),
+                notes=str(data.get("notes", "")),
+                createdAt=_to_iso(data.get("createdAt")),
+                updatedAt=_to_iso(data.get("updatedAt")),
+            )
         )
+    return items
 
-    # Build ordered steps from static workflow definitions.
-    steps: list[WorkflowStepResult] = []
-    for step_id, title, launch_url, action in WORKFLOW_STEPS:
-        # URL-based steps are surfaced as actionable in-progress tasks.
-        if action == "open-url" and launch_url:
-            steps.append(
-                WorkflowStepResult(
-                    id=step_id,
-                    title=title,
-                    status="in-progress",
-                    action="open-url",
-                    message=(
-                        # Include normalized email directly in user guidance.
-                        f"Use {normalized_email} to sign in or create an account, then complete this step in the linked tool."
-                    ),
-                    launchUrl=launch_url,
-                )
-            )
-        else:
-            # Manual tasks are represented as done-by-default placeholders.
-            steps.append(
-                WorkflowStepResult(
-                    id=step_id,
-                    title=title,
-                    status="done",
-                    action="manual",
-                    message="Manual drafting/revision step. Complete directly in the editor before proceeding.",
-                )
-            )
 
-    # Return the full generated plan in the same order as WORKFLOW_STEPS.
-    return WorkflowRunResponse(
-        status="ready",
-        summary=(
-            "Workflow plan generated successfully. External tools require browser launch + manual completion; "
-            "manual writing steps are marked complete-by-default for tracking."
-        ),
-        steps=steps,
+def create_study_plan(payload: StudyPlanCreate) -> StudyPlanItem:
+    """Create a new study plan entry in Firestore."""
+
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+
+    doc_ref = client.collection("study_plans").document()
+    doc_ref.set(
+        {
+            "title": payload.title.strip(),
+            "goal": payload.goal.strip(),
+            "sessionDate": payload.sessionDate,
+            "durationMinutes": payload.durationMinutes,
+            "notes": payload.notes.strip(),
+            "createdAt": now,
+            "updatedAt": now,
+        }
+    )
+    data = doc_ref.get().to_dict() or {}
+    return StudyPlanItem(
+        id=doc_ref.id,
+        title=str(data.get("title", payload.title.strip())),
+        goal=str(data.get("goal", payload.goal.strip())),
+        sessionDate=str(data.get("sessionDate", payload.sessionDate)),
+        durationMinutes=int(data.get("durationMinutes", payload.durationMinutes)),
+        notes=str(data.get("notes", payload.notes.strip())),
+        createdAt=_to_iso(data.get("createdAt", now)),
+        updatedAt=_to_iso(data.get("updatedAt", now)),
     )
