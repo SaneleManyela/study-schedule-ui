@@ -4,6 +4,8 @@ export interface ScheduleItem {
   description: string;
   startAt: string;
   endAt: string;
+  resourceTitle?: string | null;
+  resourceUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -15,6 +17,8 @@ export interface StudyPlanItem {
   sessionDate: string;
   durationMinutes: number;
   notes: string;
+  resourceTitle?: string | null;
+  resourceUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -24,6 +28,8 @@ export interface CreateSchedulePayload {
   description: string;
   startAt: string;
   endAt: string;
+  resourceTitle?: string;
+  resourceUrl?: string;
 }
 
 export interface CreateStudyPlanPayload {
@@ -32,6 +38,8 @@ export interface CreateStudyPlanPayload {
   sessionDate: string;
   durationMinutes: number;
   notes: string;
+  resourceTitle?: string;
+  resourceUrl?: string;
 }
 
 const API_BASE_URL =
@@ -75,5 +83,28 @@ export function createStudyPlan(payload: CreateStudyPlanPayload): Promise<StudyP
   return requestJson<StudyPlanItem>("/api/study-plans", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export interface AuthResult {
+  success: boolean;
+  error?: string | null;
+}
+
+export function verifyAdminPassword(password: string): Promise<AuthResult> {
+  return requestJson<AuthResult>("/api/auth/verify-password", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function sendAdminPin(): Promise<AuthResult> {
+  return requestJson<AuthResult>("/api/auth/send-pin", { method: "POST" });
+}
+
+export function verifyAdminPin(pin: string): Promise<AuthResult> {
+  return requestJson<AuthResult>("/api/auth/verify-pin", {
+    method: "POST",
+    body: JSON.stringify({ pin }),
   });
 }

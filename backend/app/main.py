@@ -9,8 +9,13 @@ from .models import (
     ScheduleItem,
     StudyPlanCreate,
     StudyPlanItem,
+    SendPinResponse,
+    VerifyPasswordRequest,
+    VerifyPasswordResponse,
+    VerifyPinRequest,
+    VerifyPinResponse,
 )
-from .service import create_schedule, create_study_plan, list_schedules, list_study_plans
+from .service import create_schedule, create_study_plan, list_schedules, list_study_plans, verify_admin_password, send_admin_pin, verify_admin_pin
 
 
 # Create the FastAPI app object and expose API metadata visible in docs.
@@ -33,6 +38,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "https://sanelemanyela.github.io",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -78,3 +86,24 @@ def post_study_plan(payload: StudyPlanCreate) -> StudyPlanItem:
     """Create a study plan entry in Firestore."""
 
     return create_study_plan(payload)
+
+
+@app.post("/api/auth/verify-password", response_model=VerifyPasswordResponse)
+def auth_verify_password(payload: VerifyPasswordRequest) -> VerifyPasswordResponse:
+    """Verify admin password against the passwords Firestore collection."""
+
+    return verify_admin_password(payload.password)
+
+
+@app.post("/api/auth/send-pin", response_model=SendPinResponse)
+def auth_send_pin() -> SendPinResponse:
+    """Generate and send a 6-digit PIN to the configured admin email."""
+
+    return send_admin_pin()
+
+
+@app.post("/api/auth/verify-pin", response_model=VerifyPinResponse)
+def auth_verify_pin(payload: VerifyPinRequest) -> VerifyPinResponse:
+    """Verify the submitted PIN."""
+
+    return verify_admin_pin(payload.pin)

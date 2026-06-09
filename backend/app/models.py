@@ -17,6 +17,8 @@ class ScheduleCreate(BaseModel):
     description: str = Field(default="", max_length=2000)
     startAt: str = Field(..., min_length=10, max_length=40)
     endAt: str = Field(..., min_length=10, max_length=40)
+    resourceTitle: str | None = Field(default=None, max_length=200)
+    resourceUrl: str | None = Field(default=None, max_length=2000)
 
 
 class ScheduleItem(ScheduleCreate):
@@ -35,6 +37,8 @@ class StudyPlanCreate(BaseModel):
     sessionDate: str = Field(..., min_length=10, max_length=20)
     durationMinutes: int = Field(..., gt=0, le=1440)
     notes: str = Field(default="", max_length=2000)
+    resourceTitle: str | None = Field(default=None, max_length=200)
+    resourceUrl: str | None = Field(default=None, max_length=2000)
 
 
 class StudyPlanItem(StudyPlanCreate):
@@ -43,3 +47,30 @@ class StudyPlanItem(StudyPlanCreate):
     id: str
     createdAt: str
     updatedAt: str
+
+
+class VerifyPasswordRequest(BaseModel):
+    """Incoming payload for POST /api/auth/verify-password."""
+
+    password: str = Field(..., min_length=1, max_length=256)
+
+
+class VerifyPasswordResponse(BaseModel):
+    success: bool
+    error: str | None = None
+
+
+class VerifyPinRequest(BaseModel):
+    """Incoming payload for POST /api/auth/verify-pin."""
+
+    pin: str = Field(..., min_length=6, max_length=6)
+
+
+class VerifyPinResponse(BaseModel):
+    success: bool
+    error: str | None = None
+
+
+class SendPinResponse(BaseModel):
+    success: bool
+    error: str | None = None
