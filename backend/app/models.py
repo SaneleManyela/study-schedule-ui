@@ -101,12 +101,35 @@ class SendPinResponse(BaseModel):
     error: str | None = None
 
 
+class CheckEmailRequest(BaseModel):
+    """Incoming payload for POST /api/auth/check-email."""
+
+    email: str = Field(..., min_length=3, max_length=254)
+
+
+class CheckEmailResponse(BaseModel):
+    exists: bool
+
+
+class SignupRequest(BaseModel):
+    """Incoming payload for POST /api/auth/signup."""
+
+    email: str = Field(..., min_length=3, max_length=254)
+    password: str = Field(..., min_length=8, max_length=256)
+
+
+class SignupResponse(BaseModel):
+    success: bool
+    error: str | None = None
+
+
 # ─── Courses ────────────────────────────────────────────────────────────────
 
 class CourseCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     status: str = Field(..., pattern="^(shelf|enrolled|in-progress|completed)$")
     category: str | None = Field(default=None, max_length=100)
+    hasCertificate: bool = Field(default=False)
 
 
 class CourseItem(CourseCreate):
@@ -119,6 +142,7 @@ class CourseUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     status: str | None = Field(default=None, pattern="^(shelf|enrolled|in-progress|completed)$")
     category: str | None = Field(default=None, max_length=100)
+    hasCertificate: bool | None = Field(default=None)
 
 
 # ─── Library Items ────────────────────────────────────────────────────────────

@@ -107,10 +107,15 @@ export function CourseDetailPage() {
           {course.category && (
             <p className="text-muted-foreground mt-1">{course.category}</p>
           )}
-          <div className="mt-3">
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
             <span className={cn("text-sm px-3 py-1 rounded-full font-medium", statusInfo.cls)}>
               {statusInfo.label}
             </span>
+            {course.hasCertificate && (
+              <span className="text-sm px-3 py-1 rounded-full font-medium bg-yellow-500/20 text-yellow-400">
+                Certificate
+              </span>
+            )}
           </div>
         </div>
       </div>

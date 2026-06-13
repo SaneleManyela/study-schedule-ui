@@ -24,6 +24,7 @@ import { Label } from "../components/ui/label";
 import {
   loadLocal,
   saveLocal,
+  createSchedule,
   type ScheduleItem,
 } from "../lib/api";
 import { toast } from "sonner";
@@ -60,19 +61,27 @@ export function StudyCalendarPage() {
     setNewEventOpen(true);
   };
 
-  const handleAddEvent = () => {
+  const handleAddEvent = async () => {
     if (!newTitle.trim()) { toast.error("Title is required."); return; }
     const now = new Date().toISOString();
-    const item: ScheduleItem = {
-      id: `${Date.now()}-${Math.random()}`,
-      title: newTitle.trim(),
-      description: "",
-      startAt: `${newDate}T${newStart}:00`,
-      endAt: `${newDate}T${newEnd}:00`,
-      createdAt: now,
-      updatedAt: now,
-    };
-    persist([item, ...schedules]);
+    const startAt = `${newDate}T${newStart}:00`;
+    const endAt = `${newDate}T${newEnd}:00`;
+    try {
+      const saved = await createSchedule({ title: newTitle.trim(), description: "", startAt, endAt });
+      persist([saved, ...schedules]);
+    } catch {
+      // Backend unreachable — save locally
+      const item: ScheduleItem = {
+        id: `${Date.now()}-${Math.random()}`,
+        title: newTitle.trim(),
+        description: "",
+        startAt,
+        endAt,
+        createdAt: now,
+        updatedAt: now,
+      };
+      persist([item, ...schedules]);
+    }
     setNewEventOpen(false);
     setNewTitle("");
     toast.success("Event added to calendar.");

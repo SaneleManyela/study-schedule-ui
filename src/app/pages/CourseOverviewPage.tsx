@@ -86,6 +86,7 @@ export function CourseOverviewPage() {
   const [formName, setFormName] = useState("");
   const [formStatus, setFormStatus] = useState<CourseStatus>("shelf");
   const [formCategory, setFormCategory] = useState(CATEGORIES[0]);
+  const [formCertificate, setFormCertificate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [useRemote, setUseRemote] = useState(true);
@@ -115,6 +116,7 @@ export function CourseOverviewPage() {
     setFormName("");
     setFormStatus("shelf");
     setFormCategory(CATEGORIES[0]);
+    setFormCertificate(false);
     setDialogOpen(true);
   };
 
@@ -124,6 +126,7 @@ export function CourseOverviewPage() {
     setFormName(course.name);
     setFormStatus(course.status);
     setFormCategory(course.category ?? CATEGORIES[0]);
+    setFormCertificate(course.hasCertificate ?? false);
     setDialogOpen(true);
   };
 
@@ -134,7 +137,7 @@ export function CourseOverviewPage() {
     }
     const now = new Date().toISOString();
     if (dialogMode === "add") {
-      const payload: CreateCoursePayload = { name: formName.trim(), status: formStatus, category: formCategory };
+      const payload: CreateCoursePayload = { name: formName.trim(), status: formStatus, category: formCategory, hasCertificate: formCertificate };
       const localCourse: Course = { id: `${Date.now()}-${Math.random()}`, ...payload, createdAt: now, updatedAt: now };
       await syncRemote(
         async () => {
@@ -145,7 +148,7 @@ export function CourseOverviewPage() {
       );
       toast.success("Course added.");
     } else if (editTarget) {
-      const patch = { name: formName.trim(), status: formStatus, category: formCategory };
+      const patch = { name: formName.trim(), status: formStatus, category: formCategory, hasCertificate: formCertificate };
       const localUpdated = courses.map((c) =>
         c.id === editTarget.id ? { ...c, ...patch, updatedAt: now } : c,
       );
@@ -197,13 +200,14 @@ export function CourseOverviewPage() {
             <TableRow>
               <TableCell sx={MUI_HEAD_SX}>Course</TableCell>
               <TableCell sx={MUI_HEAD_SX}>Status</TableCell>
+              <TableCell sx={MUI_HEAD_SX}>Certificate</TableCell>
               <TableCell sx={MUI_HEAD_SX} align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={3} sx={{ ...MUI_CELL_SX, color: "#a0a0a0", textAlign: "center", py: 3 }}>
+                <TableCell colSpan={4} sx={{ ...MUI_CELL_SX, color: "#a0a0a0", textAlign: "center", py: 3 }}>
                   No courses in this list.
                 </TableCell>
               </TableRow>
@@ -229,6 +233,11 @@ export function CourseOverviewPage() {
                   </TableCell>
                   <TableCell sx={MUI_CELL_SX}>
                     <StatusBadge status={course.status} />
+                  </TableCell>
+                  <TableCell sx={MUI_CELL_SX}>
+                    {course.hasCertificate
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-medium">Yes</span>
+                      : <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">No</span>}
                   </TableCell>
                   <TableCell sx={MUI_CELL_SX} align="right">
                     <Tooltip title="Enroll" arrow>
@@ -340,6 +349,35 @@ export function CourseOverviewPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Certificate</Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFormCertificate(true)}
+                  className={cn(
+                    "flex-1 py-1.5 rounded-md text-sm font-medium border transition-colors",
+                    formCertificate
+                      ? "bg-primary border-primary text-white"
+                      : "bg-secondary border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormCertificate(false)}
+                  className={cn(
+                    "flex-1 py-1.5 rounded-md text-sm font-medium border transition-colors",
+                    !formCertificate
+                      ? "bg-primary border-primary text-white"
+                      : "bg-secondary border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  No
+                </button>
+              </div>
             </div>
           </div>
           <DialogFooter>

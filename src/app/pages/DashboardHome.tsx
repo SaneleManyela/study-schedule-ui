@@ -24,7 +24,7 @@ export function DashboardHome() {
 
   const ongoing = courses.filter((c) => c.status === "in-progress" || c.status === "enrolled");
   const completed = courses.filter((c) => c.status === "completed");
-  const certifications = completed.length;
+  const certifications = courses.filter((c) => c.hasCertificate).length;
 
   // Category breakdown for pie chart
   const categoryMap: Record<string, number> = {};

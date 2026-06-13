@@ -15,6 +15,10 @@ from .models import (
     VerifyPasswordResponse,
     VerifyPinRequest,
     VerifyPinResponse,
+    CheckEmailRequest,
+    CheckEmailResponse,
+    SignupRequest,
+    SignupResponse,
     CourseCreate,
     CourseItem,
     CourseUpdate,
@@ -26,6 +30,7 @@ from .models import (
 from .service import (
     create_schedule, create_study_plan, list_schedules, list_study_plans,
     verify_admin_password, send_admin_pin, verify_admin_pin,
+    check_admin_email, signup_admin,
     list_courses, create_course, update_course, delete_course,
     list_library_items, create_library_item, delete_library_item,
     get_course_note, upsert_course_note,
@@ -107,6 +112,20 @@ def auth_verify_password(payload: VerifyPasswordRequest) -> VerifyPasswordRespon
     """Verify admin password against the passwords Firestore collection."""
 
     return verify_admin_password(payload.password, payload.email)
+
+
+@app.post("/api/auth/check-email", response_model=CheckEmailResponse)
+def auth_check_email(payload: CheckEmailRequest) -> CheckEmailResponse:
+    """Check whether an Auth document exists for a given email."""
+
+    return check_admin_email(payload.email)
+
+
+@app.post("/api/auth/signup", response_model=SignupResponse)
+def auth_signup(payload: SignupRequest) -> SignupResponse:
+    """Create a new admin account if the email is not already registered."""
+
+    return signup_admin(payload.email, payload.password)
 
 
 @app.post("/api/auth/send-pin", response_model=SendPinResponse)
