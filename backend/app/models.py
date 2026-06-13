@@ -52,7 +52,25 @@ class StudyPlanItem(StudyPlanCreate):
 class VerifyPasswordRequest(BaseModel):
     """Incoming payload for POST /api/auth/verify-password."""
 
+    email: str = Field(..., min_length=3, max_length=254)
     password: str = Field(..., min_length=1, max_length=256)
+
+
+class CheckEmailRequest(BaseModel):
+    """Incoming payload for POST /api/auth/check-email."""
+
+    email: str = Field(..., min_length=3, max_length=254)
+
+
+class CheckEmailResponse(BaseModel):
+    exists: bool
+
+
+class SignupRequest(BaseModel):
+    """Incoming payload for POST /api/auth/signup."""
+
+    email: str = Field(..., min_length=3, max_length=254)
+    password: str = Field(..., min_length=8, max_length=256)
 
 
 class VerifyPasswordResponse(BaseModel):
@@ -60,9 +78,16 @@ class VerifyPasswordResponse(BaseModel):
     error: str | None = None
 
 
+class SendPinRequest(BaseModel):
+    """Incoming payload for POST /api/auth/send-pin."""
+
+    email: str = Field(..., min_length=3, max_length=254)
+
+
 class VerifyPinRequest(BaseModel):
     """Incoming payload for POST /api/auth/verify-pin."""
 
+    email: str = Field(..., min_length=3, max_length=254)
     pin: str = Field(..., min_length=6, max_length=6)
 
 
@@ -74,3 +99,55 @@ class VerifyPinResponse(BaseModel):
 class SendPinResponse(BaseModel):
     success: bool
     error: str | None = None
+
+
+# ─── Courses ────────────────────────────────────────────────────────────────
+
+class CourseCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    status: str = Field(..., pattern="^(shelf|enrolled|in-progress|completed)$")
+    category: str | None = Field(default=None, max_length=100)
+
+
+class CourseItem(CourseCreate):
+    id: str
+    createdAt: str
+    updatedAt: str
+
+
+class CourseUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    status: str | None = Field(default=None, pattern="^(shelf|enrolled|in-progress|completed)$")
+    category: str | None = Field(default=None, max_length=100)
+
+
+# ─── Library Items ────────────────────────────────────────────────────────────
+
+class LibraryItemCreate(BaseModel):
+    courseId: str = Field(..., min_length=1, max_length=200)
+    courseName: str = Field(..., min_length=1, max_length=200)
+    title: str = Field(..., min_length=1, max_length=200)
+    type: str = Field(..., pattern="^(pdf|url)$")
+    content: str = Field(..., min_length=1)  # base64 data URI for PDFs, plain URL for links
+
+
+class LibraryItem(LibraryItemCreate):
+    id: str
+    createdAt: str
+    updatedAt: str
+
+
+# ─── Course Notes ─────────────────────────────────────────────────────────────
+
+class CourseNoteUpsert(BaseModel):
+    """Payload to create or overwrite a note for a course (one note per course)."""
+
+    content: str = Field(default="")
+
+
+class CourseNoteItem(BaseModel):
+    """Stored note returned to the client."""
+
+    courseId: str
+    content: str
+    updatedAt: str

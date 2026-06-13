@@ -18,7 +18,7 @@ import smtplib
 import string
 from email.mime.text import MIMEText
 
-from .models import ScheduleCreate, ScheduleItem, StudyPlanCreate, StudyPlanItem, SendPinResponse, VerifyPasswordResponse, VerifyPinResponse
+from .models import ScheduleCreate, ScheduleItem, StudyPlanCreate, StudyPlanItem, SendPinResponse, VerifyPasswordResponse, VerifyPinResponse, CourseCreate, CourseItem, CourseUpdate, LibraryItemCreate, LibraryItem, CourseNoteUpsert, CourseNoteItem
 
 
 def _parse_iso_datetime(value: str) -> datetime:
@@ -76,19 +76,19 @@ def _get_firestore_client() -> firestore.Client:
 # Auth helpers (password / PIN via Firestore passwords collection)
 # ---------------------------------------------------------------------------
 
-def _get_admin_doc():
-    """Return the first document in the passwords collection or None."""
+def _get_admin_doc(email: str):
+    """Return the Auth document matching the given email, or None."""
     client = _get_firestore_client()
-    snapshot = client.collection("password").limit(1).get()
+    snapshot = client.collection("Auth").where(filter=firestore.FieldFilter("email", "==", email)).limit(1).get()
     if not snapshot:
         return None
     return snapshot[0]
 
 
-def verify_admin_password(password: str) -> VerifyPasswordResponse:
+def verify_admin_password(password: str, email: str) -> VerifyPasswordResponse:
     """Check the supplied password against the Firestore admin config."""
     try:
-        doc = _get_admin_doc()
+        doc = _get_admin_doc(email)
         if doc is None:
             return VerifyPasswordResponse(success=False, error="Admin config not found")
         data = doc.to_dict() or {}
@@ -100,30 +100,29 @@ def verify_admin_password(password: str) -> VerifyPasswordResponse:
         return VerifyPasswordResponse(success=False, error=str(exc))
 
 
-def send_admin_pin() -> SendPinResponse:
-    """Generate a 6-digit PIN, store it in Firestore, and e-mail it via Gmail SMTP."""
+def send_admin_pin(email: str) -> SendPinResponse:
+    """Generate a 6-digit PIN, store it in Firestore, and e-mail it via SMTP (or Resend fallback)."""
     try:
-        doc = _get_admin_doc()
+        doc = _get_admin_doc(email)
         if doc is None:
             return SendPinResponse(success=False, error="Admin config not found")
-        data = doc.to_dict() or {}
-        email = data.get("email", "").strip()
         if not email:
-            return SendPinResponse(success=False, error="No email configured in passwords collection")
+            return SendPinResponse(success=False, error="No email provided")
 
         pin = "".join(random.choices(string.digits, k=6))
-        pin_expires_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        # Store for 10 minutes
+        # Store PIN with 10-minute expiry
         expires_dt = datetime.now(UTC).timestamp() + 600
         doc.reference.set(
             {"pin": pin, "pinExpiresAt": datetime.fromtimestamp(expires_dt, UTC).isoformat(), "updatedAt": datetime.now(UTC).isoformat()},
             merge=True,
         )
 
-        # Send via Gmail SMTP using env vars
+        resend_key = os.getenv("RESEND_API_KEY", "").strip()
         smtp_user = os.getenv("SMTP_USER", "").strip()
         smtp_pass = os.getenv("SMTP_PASSWORD", "").strip()
+
         if smtp_user and smtp_pass:
+            # ── Gmail SMTP (primary) ────────────────────────────────────────
             msg = MIMEText(f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.")
             msg["Subject"] = "Study Planner Admin PIN"
             msg["From"] = smtp_user
@@ -131,8 +130,30 @@ def send_admin_pin() -> SendPinResponse:
             with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
                 server.login(smtp_user, smtp_pass)
                 server.sendmail(smtp_user, [email], msg.as_string())
+        elif resend_key:
+            # ── Resend API (fallback) ───────────────────────────────────────
+            import urllib.request
+            import json as _json
+            payload = _json.dumps({
+                "from": "Study Planner <onboarding@resend.dev>",
+                "to": [email],
+                "subject": "Study Planner Admin PIN",
+                "text": f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.",
+            }).encode()
+            req = urllib.request.Request(
+                "https://api.resend.com/emails",
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {resend_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req) as resp:
+                if resp.status not in (200, 201):
+                    raise RuntimeError(f"Resend returned HTTP {resp.status}")
         else:
-            # Dev fallback: print PIN to backend console so local testing works
+            # Dev fallback: print PIN to backend console
             print(f"[DEV] Admin PIN for {email}: {pin}")
 
         return SendPinResponse(success=True)
@@ -140,10 +161,10 @@ def send_admin_pin() -> SendPinResponse:
         return SendPinResponse(success=False, error=str(exc))
 
 
-def verify_admin_pin(pin: str) -> VerifyPinResponse:
+def verify_admin_pin(pin: str, email: str) -> VerifyPinResponse:
     """Validate the submitted PIN against the stored Firestore value."""
     try:
-        doc = _get_admin_doc()
+        doc = _get_admin_doc(email)
         if doc is None:
             return VerifyPinResponse(success=False, error="Admin config not found")
         data = doc.to_dict() or {}
@@ -280,4 +301,167 @@ def create_study_plan(payload: StudyPlanCreate) -> StudyPlanItem:
         resourceUrl=str(data.get("resourceUrl")) if data.get("resourceUrl") is not None else payload.resourceUrl,
         createdAt=_to_iso(data.get("createdAt", now)),
         updatedAt=_to_iso(data.get("updatedAt", now)),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Courses
+# ---------------------------------------------------------------------------
+
+def list_courses() -> list[CourseItem]:
+    """Fetch all courses ordered by name."""
+    client = _get_firestore_client()
+    docs = client.collection("courses").order_by("name").stream()
+    items: list[CourseItem] = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        items.append(CourseItem(
+            id=doc.id,
+            name=str(data.get("name", "")),
+            status=str(data.get("status", "shelf")),
+            category=str(data.get("category")) if data.get("category") else None,
+            createdAt=_to_iso(data.get("createdAt")),
+            updatedAt=_to_iso(data.get("updatedAt")),
+        ))
+    return items
+
+
+def create_course(payload: CourseCreate) -> CourseItem:
+    """Create a course in Firestore."""
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    doc_ref = client.collection("courses").document()
+    doc_ref.set({
+        "name": payload.name.strip(),
+        "status": payload.status,
+        "category": payload.category.strip() if payload.category else None,
+        "createdAt": now,
+        "updatedAt": now,
+    })
+    return CourseItem(
+        id=doc_ref.id,
+        name=payload.name.strip(),
+        status=payload.status,
+        category=payload.category.strip() if payload.category else None,
+        createdAt=now.isoformat(),
+        updatedAt=now.isoformat(),
+    )
+
+
+def update_course(course_id: str, payload: CourseUpdate) -> CourseItem:
+    """Update a course document in Firestore."""
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    doc_ref = client.collection("courses").document(course_id)
+    updates: dict = {"updatedAt": now}
+    if payload.name is not None:
+        updates["name"] = payload.name.strip()
+    if payload.status is not None:
+        updates["status"] = payload.status
+    if payload.category is not None:
+        updates["category"] = payload.category.strip()
+    doc_ref.set(updates, merge=True)
+    data = doc_ref.get().to_dict() or {}
+    return CourseItem(
+        id=course_id,
+        name=str(data.get("name", "")),
+        status=str(data.get("status", "shelf")),
+        category=str(data.get("category")) if data.get("category") else None,
+        createdAt=_to_iso(data.get("createdAt")),
+        updatedAt=_to_iso(data.get("updatedAt")),
+    )
+
+
+def delete_course(course_id: str) -> None:
+    """Delete a course from Firestore."""
+    client = _get_firestore_client()
+    client.collection("courses").document(course_id).delete()
+
+
+# ---------------------------------------------------------------------------
+# Library Items
+# ---------------------------------------------------------------------------
+
+def list_library_items() -> list[LibraryItem]:
+    """Fetch all library items ordered by title."""
+    client = _get_firestore_client()
+    docs = client.collection("library").order_by("title").stream()
+    items: list[LibraryItem] = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        items.append(LibraryItem(
+            id=doc.id,
+            courseId=str(data.get("courseId", "")),
+            courseName=str(data.get("courseName", "")),
+            title=str(data.get("title", "")),
+            type=str(data.get("type", "pdf")),
+            content=str(data.get("content", "")),
+            createdAt=_to_iso(data.get("createdAt")),
+            updatedAt=_to_iso(data.get("updatedAt")),
+        ))
+    return items
+
+
+def create_library_item(payload: LibraryItemCreate) -> LibraryItem:
+    """Store a library item in Firestore."""
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    doc_ref = client.collection("library").document()
+    doc_ref.set({
+        "courseId": payload.courseId,
+        "courseName": payload.courseName,
+        "title": payload.title.strip(),
+        "type": payload.type,
+        "content": payload.content,
+        "createdAt": now,
+        "updatedAt": now,
+    })
+    return LibraryItem(
+        id=doc_ref.id,
+        courseId=payload.courseId,
+        courseName=payload.courseName,
+        title=payload.title.strip(),
+        type=payload.type,
+        content=payload.content,
+        createdAt=now.isoformat(),
+        updatedAt=now.isoformat(),
+    )
+
+
+def delete_library_item(item_id: str) -> None:
+    """Delete a library item from Firestore."""
+    client = _get_firestore_client()
+    client.collection("library").document(item_id).delete()
+
+
+# ---------------------------------------------------------------------------
+# Course Notes  (one note document per course, stored in "course-notes" collection)
+# ---------------------------------------------------------------------------
+
+def get_course_note(course_id: str) -> CourseNoteItem | None:
+    """Return the note for a course, or None if it doesn't exist."""
+    client = _get_firestore_client()
+    doc = client.collection("course-notes").document(course_id).get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict() or {}
+    return CourseNoteItem(
+        courseId=course_id,
+        content=str(data.get("content", "")),
+        updatedAt=_to_iso(data.get("updatedAt")),
+    )
+
+
+def upsert_course_note(course_id: str, payload: CourseNoteUpsert) -> CourseNoteItem:
+    """Create or overwrite the note for a course."""
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    client.collection("course-notes").document(course_id).set(
+        {"content": payload.content, "updatedAt": now},
+        merge=False,
+    )
+    return CourseNoteItem(
+        courseId=course_id,
+        content=payload.content,
+        updatedAt=now.isoformat(),
     )

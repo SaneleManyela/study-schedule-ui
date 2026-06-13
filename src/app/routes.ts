@@ -1,7 +1,13 @@
 import { createBrowserRouter, redirect } from "react-router";
-import { SystemsHomePage } from "./pages/SystemsHomePage";
 import { LoginPage } from "./pages/LoginPage";
-import { AdminPage } from "./pages/AdminDashboard";
+import { AdminLayout } from "./pages/AdminLayout";
+import { DashboardHome } from "./pages/DashboardHome";
+import { CourseOverviewPage } from "./pages/CourseOverviewPage";
+import { StudyCalendarPage } from "./pages/StudyCalendarPage";
+import { StudyPlanPage } from "./pages/StudyPlanPage";
+import { LibraryPage } from "./pages/LibraryPage";
+import { CourseDetailPage } from "./pages/CourseDetailPage";
+import { CourseNotesPage } from "./pages/CourseNotesPage";
 
 function requireAdmin() {
   const isAdmin = localStorage.getItem("studyPlannerAdmin") === "true";
@@ -15,7 +21,7 @@ export const router = createBrowserRouter(
   [
     {
       path: "/",
-      Component: SystemsHomePage,
+      loader: () => redirect("/login"),
     },
     {
       path: "/login",
@@ -24,11 +30,20 @@ export const router = createBrowserRouter(
     {
       path: "/admin",
       loader: requireAdmin,
-      Component: AdminPage,
+      Component: AdminLayout,
+      children: [
+        { index: true, Component: DashboardHome },
+        { path: "courses", Component: CourseOverviewPage },
+        { path: "courses/:id", Component: CourseDetailPage },
+        { path: "courses/:id/notes", Component: CourseNotesPage },
+        { path: "calendar", Component: StudyCalendarPage },
+        { path: "study-plan", Component: StudyPlanPage },
+        { path: "library", Component: LibraryPage },
+      ],
     },
     {
       path: "*",
-      Component: SystemsHomePage,
+      loader: () => redirect("/login"),
     },
   ],
   { basename: import.meta.env.BASE_URL },

@@ -36,13 +36,13 @@ export function LoginPage() {
           setIsLoading(false);
           return;
         }
-        const pwResult = await verifyAdminPassword(password);
+        const pwResult = await verifyAdminPassword(email, password);
         if (!pwResult.success) {
           setError(pwResult.error ?? "Incorrect password.");
           setIsLoading(false);
           return;
         }
-        const pinResult = await sendAdminPin();
+        const pinResult = await sendAdminPin(email);
         if (!pinResult.success) {
           setError(pinResult.error ?? "Failed to send PIN.");
           setIsLoading(false);
@@ -51,9 +51,8 @@ export function LoginPage() {
         toast.success("PIN sent to the configured admin email.");
         setStep("pin");
       } else {
-        // Non-admin users go straight to the planner
-        localStorage.setItem("studyPlannerEmail", email.trim());
-        navigate("/");
+        // Only admin access is supported
+        setError("Only admin accounts (Gmail) with a password are supported.");
       }
     } catch {
       setError("Login failed. Please try again.");
@@ -70,7 +69,7 @@ export function LoginPage() {
     }
     setIsLoading(true);
     try {
-      const result = await verifyAdminPin(pin);
+      const result = await verifyAdminPin(email, pin);
       if (result.success) {
         localStorage.setItem("studyPlannerEmail", email.trim());
         localStorage.setItem("studyPlannerAdmin", "true");

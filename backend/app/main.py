@@ -9,13 +9,27 @@ from .models import (
     ScheduleItem,
     StudyPlanCreate,
     StudyPlanItem,
+    SendPinRequest,
     SendPinResponse,
     VerifyPasswordRequest,
     VerifyPasswordResponse,
     VerifyPinRequest,
     VerifyPinResponse,
+    CourseCreate,
+    CourseItem,
+    CourseUpdate,
+    LibraryItemCreate,
+    LibraryItem,
+    CourseNoteUpsert,
+    CourseNoteItem,
 )
-from .service import create_schedule, create_study_plan, list_schedules, list_study_plans, verify_admin_password, send_admin_pin, verify_admin_pin
+from .service import (
+    create_schedule, create_study_plan, list_schedules, list_study_plans,
+    verify_admin_password, send_admin_pin, verify_admin_pin,
+    list_courses, create_course, update_course, delete_course,
+    list_library_items, create_library_item, delete_library_item,
+    get_course_note, upsert_course_note,
+)
 
 
 # Create the FastAPI app object and expose API metadata visible in docs.
@@ -92,18 +106,71 @@ def post_study_plan(payload: StudyPlanCreate) -> StudyPlanItem:
 def auth_verify_password(payload: VerifyPasswordRequest) -> VerifyPasswordResponse:
     """Verify admin password against the passwords Firestore collection."""
 
-    return verify_admin_password(payload.password)
+    return verify_admin_password(payload.password, payload.email)
 
 
 @app.post("/api/auth/send-pin", response_model=SendPinResponse)
-def auth_send_pin() -> SendPinResponse:
-    """Generate and send a 6-digit PIN to the configured admin email."""
+def auth_send_pin(payload: SendPinRequest) -> SendPinResponse:
+    """Generate and send a 6-digit PIN to the given admin email."""
 
-    return send_admin_pin()
+    return send_admin_pin(payload.email)
 
 
 @app.post("/api/auth/verify-pin", response_model=VerifyPinResponse)
 def auth_verify_pin(payload: VerifyPinRequest) -> VerifyPinResponse:
     """Verify the submitted PIN."""
 
-    return verify_admin_pin(payload.pin)
+    return verify_admin_pin(payload.pin, payload.email)
+
+
+# ─── Courses ────────────────────────────────────────────────────────────────
+
+@app.get("/api/courses", response_model=list[CourseItem])
+def get_courses() -> list[CourseItem]:
+    return list_courses()
+
+
+@app.post("/api/courses", response_model=CourseItem)
+def post_course(payload: CourseCreate) -> CourseItem:
+    return create_course(payload)
+
+
+@app.put("/api/courses/{course_id}", response_model=CourseItem)
+def put_course(course_id: str, payload: CourseUpdate) -> CourseItem:
+    return update_course(course_id, payload)
+
+
+@app.delete("/api/courses/{course_id}", status_code=204)
+def remove_course(course_id: str) -> None:
+    delete_course(course_id)
+
+
+# ─── Library ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/library", response_model=list[LibraryItem])
+def get_library() -> list[LibraryItem]:
+    return list_library_items()
+
+
+@app.post("/api/library", response_model=LibraryItem)
+def post_library_item(payload: LibraryItemCreate) -> LibraryItem:
+    return create_library_item(payload)
+
+
+@app.delete("/api/library/{item_id}", status_code=204)
+def remove_library_item(item_id: str) -> None:
+    delete_library_item(item_id)
+
+
+# ─── Course Notes ─────────────────────────────────────────────────────────────
+
+@app.get("/api/notes/{course_id}", response_model=CourseNoteItem | None)
+def get_note(course_id: str) -> CourseNoteItem | None:
+    """Return the note for a course, or null if none exists."""
+    return get_course_note(course_id)
+
+
+@app.put("/api/notes/{course_id}", response_model=CourseNoteItem)
+def put_note(course_id: str, payload: CourseNoteUpsert) -> CourseNoteItem:
+    """Create or overwrite the note for a course."""
+    return upsert_course_note(course_id, payload)
