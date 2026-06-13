@@ -98,6 +98,20 @@ export function verifyAdminPassword(email: string, password: string): Promise<Au
   });
 }
 
+export function checkAdminEmail(email: string): Promise<{ exists: boolean }> {
+  return requestJson<{ exists: boolean }>("/api/auth/check-email", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function signupAdmin(email: string, password: string): Promise<AuthResult> {
+  return requestJson<AuthResult>("/api/auth/signup", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
 export function sendAdminPin(email: string): Promise<AuthResult> {
   return requestJson<AuthResult>("/api/auth/send-pin", {
     method: "POST",
@@ -121,6 +135,7 @@ export interface Course {
   name: string;
   status: CourseStatus;
   category?: string;
+  hasCertificate: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -129,6 +144,7 @@ export interface CreateCoursePayload {
   name: string;
   status: CourseStatus;
   category?: string;
+  hasCertificate: boolean;
 }
 
 export function listCourses(): Promise<Course[]> {
