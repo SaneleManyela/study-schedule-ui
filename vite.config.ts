@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  base: process.env.NODE_ENV === 'production' ? '/academic-truth-engine-ui/' : '/',
+  base: process.env.NODE_ENV === 'production' ? '/study-schedule-ui/' : '/',
   plugins: [
     react(),
     tailwindcss(),

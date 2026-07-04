@@ -95,6 +95,7 @@ class VerifyPinResponse(BaseModel):
     success: bool
     error: str | None = None
     token: str | None = None  # Opaque session token returned on successful PIN verification
+    role: str | None = None   # "admin" | "user" — tells the frontend which UI to show
 
 
 class SendPinResponse(BaseModel):

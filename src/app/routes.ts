@@ -9,11 +9,21 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { CourseDetailPage } from "./pages/CourseDetailPage";
 import { CourseNotesPage } from "./pages/CourseNotesPage";
 
+function getSession() {
+  const loggedIn = localStorage.getItem("studyPlannerAdmin") === "true";
+  const role = localStorage.getItem("studyPlannerRole") ?? "admin"; // default admin for legacy sessions
+  return loggedIn ? role : null;
+}
+
+function requireAuth() {
+  if (!getSession()) return redirect("/login");
+  return null;
+}
+
 function requireAdmin() {
-  const isAdmin = localStorage.getItem("studyPlannerAdmin") === "true";
-  if (!isAdmin) {
-    return redirect("/login");
-  }
+  const role = getSession();
+  if (!role) return redirect("/login");
+  if (role !== "admin") return redirect("/admin"); // user role: redirect to dashboard, not 403
   return null;
 }
 
@@ -29,16 +39,18 @@ export const router = createBrowserRouter(
     },
     {
       path: "/admin",
-      loader: requireAdmin,
+      loader: requireAuth,
       Component: AdminLayout,
       children: [
+        // ── accessible to all authenticated roles ──────────────────────────
         { index: true, Component: DashboardHome },
         { path: "courses", Component: CourseOverviewPage },
         { path: "courses/:id", Component: CourseDetailPage },
-        { path: "courses/:id/notes", Component: CourseNotesPage },
         { path: "calendar", Component: StudyCalendarPage },
         { path: "study-plan", Component: StudyPlanPage },
         { path: "library", Component: LibraryPage },
+        // ── user role only: notes belong to users, not admins ──────────────
+        { path: "courses/:id/notes", loader: requireAuth, Component: CourseNotesPage },
       ],
     },
     {

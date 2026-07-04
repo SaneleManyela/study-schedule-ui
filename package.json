@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "homepage": "https://SaneleManyela.github.io/academic-truth-engine-ui",
+  "homepage": "https://SaneleManyela.github.io/study-schedule-ui",
   "scripts": {
     "build": "vite build",
     "dev": "vite",

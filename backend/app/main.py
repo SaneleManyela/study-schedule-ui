@@ -6,7 +6,7 @@ import re
 import urllib.parse
 
 import requests as _requests
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
@@ -43,6 +43,8 @@ from .service import (
     list_library_items, get_library_item, create_library_item, update_library_item, delete_library_item,
     get_course_note, upsert_course_note,
     validate_session_token,
+    _record_failed_password_attempt, _is_password_rate_limited,
+    _record_failed_sendpin_attempt, _is_sendpin_rate_limited,
 )
 
 
@@ -52,6 +54,22 @@ app = FastAPI(
     version="0.1.0",
     description="FastAPI service for calendar schedules and study plans backed by Firestore.",
 )
+
+# ─── Request body size guard (Layer 8) ────────────────────────────────────────
+# Reject bodies larger than 12 MB to prevent memory exhaustion.
+# PDF uploads are the largest payload; typical PDFs are well under this.
+_MAX_BODY_BYTES = 12 * 1024 * 1024  # 12 MB
+
+
+@app.middleware("http")
+async def _limit_body_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > _MAX_BODY_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": f"Request body exceeds the {_MAX_BODY_BYTES // (1024*1024)} MB limit."},
+        )
+    return await call_next(request)
 
 # Allow the local React dev server origins to access this API.
 #
@@ -89,14 +107,7 @@ _AUTH_EXEMPT = frozenset([
 
 @app.middleware("http")
 async def _authenticate(request: Request, call_next):
-    """Reject requests to protected endpoints that lack a valid session token.
-
-    The CORS middleware (registered above) is outermost, so CORS headers are
-    always present on the response—including these 401 short-circuits—which
-    prevents the browser from swallowing the 401 as a CORS error.
-    OPTIONS preflight requests never carry auth headers; they are always
-    passed through unconditionally.
-    """
+    """Reject requests to protected endpoints that lack a valid session token."""
     if request.method == "OPTIONS" or request.url.path in _AUTH_EXEMPT:
         return await call_next(request)
     auth = request.headers.get("authorization", "")
@@ -105,6 +116,29 @@ async def _authenticate(request: Request, call_next):
     if validate_session_token(auth[7:]) is None:
         return JSONResponse(status_code=401, content={"detail": "Invalid or expired session. Please log in again."})
     return await call_next(request)
+
+
+# ─── Role-based dependency helpers (Layer 4) ─────────────────────────────────
+
+def _get_session(request: Request) -> dict:
+    """Extract and validate the session token; return {email, role}."""
+    auth = request.headers.get("authorization", "")
+    session = validate_session_token(auth[7:]) if auth.startswith("Bearer ") else None
+    if session is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    return session
+
+
+def require_admin(session: dict = Depends(_get_session)) -> dict:
+    """Dependency: caller must have role=='admin'."""
+    if session.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return session
+
+
+def require_user(session: dict = Depends(_get_session)) -> dict:
+    """Dependency: caller must be any authenticated role."""
+    return session
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -120,15 +154,12 @@ def health() -> HealthResponse:
 
 
 @app.get("/api/schedules", response_model=list[ScheduleItem])
-def get_schedules() -> list[ScheduleItem]:
-    """Return all schedule entries from Firestore."""
-
+def get_schedules(_s: dict = Depends(require_user)) -> list[ScheduleItem]:
     return list_schedules()
 
 
 @app.post("/api/schedules", response_model=ScheduleItem)
-def post_schedule(payload: ScheduleCreate) -> ScheduleItem:
-    """Create a schedule entry in Firestore."""
+def post_schedule(payload: ScheduleCreate, _s: dict = Depends(require_admin)) -> ScheduleItem:
     try:
         return create_schedule(payload)
     except ValueError as exc:
@@ -136,24 +167,24 @@ def post_schedule(payload: ScheduleCreate) -> ScheduleItem:
 
 
 @app.get("/api/study-plans", response_model=list[StudyPlanItem])
-def get_study_plans() -> list[StudyPlanItem]:
-    """Return all study plan entries from Firestore."""
-
+def get_study_plans(_s: dict = Depends(require_user)) -> list[StudyPlanItem]:
     return list_study_plans()
 
 
 @app.post("/api/study-plans", response_model=StudyPlanItem)
-def post_study_plan(payload: StudyPlanCreate) -> StudyPlanItem:
-    """Create a study plan entry in Firestore."""
-
+def post_study_plan(payload: StudyPlanCreate, _s: dict = Depends(require_admin)) -> StudyPlanItem:
     return create_study_plan(payload)
 
 
 @app.post("/api/auth/verify-password", response_model=VerifyPasswordResponse)
 def auth_verify_password(payload: VerifyPasswordRequest) -> VerifyPasswordResponse:
     """Verify admin password against the passwords Firestore collection."""
-
-    return verify_admin_password(payload.password, payload.email)
+    if _is_password_rate_limited(payload.email):
+        return VerifyPasswordResponse(success=False, error="Too many attempts. Please wait 10 minutes.")
+    result = verify_admin_password(payload.password, payload.email)
+    if not result.success:
+        _record_failed_password_attempt(payload.email)
+    return result
 
 
 @app.post("/api/auth/check-email", response_model=CheckEmailResponse)
@@ -173,8 +204,12 @@ def auth_signup(payload: SignupRequest) -> SignupResponse:
 @app.post("/api/auth/send-pin", response_model=SendPinResponse)
 def auth_send_pin(payload: SendPinRequest) -> SendPinResponse:
     """Generate and send a 6-digit PIN to the given admin email."""
-
-    return send_admin_pin(payload.email)
+    if _is_sendpin_rate_limited(payload.email):
+        return SendPinResponse(success=False, error="Too many PIN requests. Please wait 10 minutes.")
+    result = send_admin_pin(payload.email)
+    if result.success:
+        _record_failed_sendpin_attempt(payload.email)  # counts sends, not failures
+    return result
 
 
 @app.post("/api/auth/verify-pin", response_model=VerifyPinResponse)
@@ -187,35 +222,34 @@ def auth_verify_pin(payload: VerifyPinRequest) -> VerifyPinResponse:
 # ─── Courses ────────────────────────────────────────────────────────────────
 
 @app.get("/api/courses", response_model=list[CourseItem])
-def get_courses() -> list[CourseItem]:
+def get_courses(_s: dict = Depends(require_user)) -> list[CourseItem]:
     return list_courses()
 
 
 @app.post("/api/courses", response_model=CourseItem)
-def post_course(payload: CourseCreate) -> CourseItem:
+def post_course(payload: CourseCreate, _s: dict = Depends(require_admin)) -> CourseItem:
     return create_course(payload)
 
 
 @app.put("/api/courses/{course_id}", response_model=CourseItem)
-def put_course(course_id: str, payload: CourseUpdate) -> CourseItem:
+def put_course(course_id: str, payload: CourseUpdate, _s: dict = Depends(require_admin)) -> CourseItem:
     return update_course(course_id, payload)
 
 
 @app.delete("/api/courses/{course_id}", status_code=204)
-def remove_course(course_id: str) -> None:
+def remove_course(course_id: str, _s: dict = Depends(require_admin)) -> None:
     delete_course(course_id)
 
 
 # ─── Library ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/library", response_model=list[LibraryItem])
-def get_library() -> list[LibraryItem]:
+def get_library(_s: dict = Depends(require_user)) -> list[LibraryItem]:
     return list_library_items()
 
 
 @app.get("/api/library/{item_id}", response_model=LibraryItem)
-def get_library_item_by_id(item_id: str) -> LibraryItem:
-    """Return a single library item with its full content (e.g. base64 PDF)."""
+def get_library_item_by_id(item_id: str, _s: dict = Depends(require_user)) -> LibraryItem:
     item = get_library_item(item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Library item not found.")
@@ -223,8 +257,7 @@ def get_library_item_by_id(item_id: str) -> LibraryItem:
 
 
 @app.put("/api/library/{item_id}", response_model=LibraryItem)
-def put_library_item(item_id: str, payload: LibraryItemUpdate) -> LibraryItem:
-    """Partially update a library item."""
+def put_library_item(item_id: str, payload: LibraryItemUpdate, _s: dict = Depends(require_admin)) -> LibraryItem:
     item = update_library_item(item_id, payload)
     if item is None:
         raise HTTPException(status_code=404, detail="Library item not found.")
@@ -232,7 +265,7 @@ def put_library_item(item_id: str, payload: LibraryItemUpdate) -> LibraryItem:
 
 
 @app.post("/api/library", response_model=LibraryItem)
-def post_library_item(payload: LibraryItemCreate) -> LibraryItem:
+def post_library_item(payload: LibraryItemCreate, _s: dict = Depends(require_admin)) -> LibraryItem:
     logger = logging.getLogger(__name__)
     try:
         return create_library_item(payload)
@@ -240,19 +273,17 @@ def post_library_item(payload: LibraryItemCreate) -> LibraryItem:
         logger.warning("Library item rejected (bad input): %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        # Handles requests.HTTPError and other download failures
         logger.error("Google Drive download failed for %r: %s", payload.content, exc, exc_info=True)
         raise HTTPException(status_code=502, detail=f"Failed to download document: {exc}") from exc
 
 
 @app.delete("/api/library/{item_id}", status_code=204)
-def remove_library_item(item_id: str) -> None:
+def remove_library_item(item_id: str, _s: dict = Depends(require_admin)) -> None:
     delete_library_item(item_id)
 
 
 @app.patch("/api/library/{item_id}", response_model=LibraryItem)
-def patch_library_item(item_id: str, payload: LibraryItemUpdate) -> LibraryItem:
-    """Update title, course, or content of an existing library item."""
+def patch_library_item(item_id: str, payload: LibraryItemUpdate, _s: dict = Depends(require_admin)) -> LibraryItem:
     return update_library_item(item_id, payload)
 
 
@@ -387,12 +418,10 @@ def proxy_url(
 # ─── Course Notes ─────────────────────────────────────────────────────────────
 
 @app.get("/api/notes/{course_id}", response_model=CourseNoteItem | None)
-def get_note(course_id: str) -> CourseNoteItem | None:
-    """Return the note for a course, or null if none exists."""
+def get_note(course_id: str, _s: dict = Depends(require_user)) -> CourseNoteItem | None:
     return get_course_note(course_id)
 
 
 @app.put("/api/notes/{course_id}", response_model=CourseNoteItem)
-def put_note(course_id: str, payload: CourseNoteUpsert) -> CourseNoteItem:
-    """Create or overwrite the note for a course."""
+def put_note(course_id: str, payload: CourseNoteUpsert, _s: dict = Depends(require_user)) -> CourseNoteItem:
     return upsert_course_note(course_id, payload)

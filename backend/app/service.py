@@ -75,38 +75,42 @@ _TTL_STATIC = 60   # courses, library               — change less often
 
 # ---------------------------------------------------------------------------
 # Session token (HMAC-SHA256 signed, 8-hour TTL)
-# Generated once per server process; all tokens are invalidated on restart.
+# Read from SESSION_SECRET env var so tokens survive Cloud Run cold-starts.
+# Falls back to a random key in development (all sessions end on restart).
 # ---------------------------------------------------------------------------
 
-_SESSION_SECRET = secrets.token_hex(32)
+_SESSION_SECRET = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
 _SESSION_TTL = 8 * 3600  # 8 hours
 
 
-def _generate_session_token(email: str) -> str:
-    """Return a signed opaque token: b64url(email):expires_ts:hmac."""
+def _generate_session_token(email: str, role: str) -> str:
+    """Return a signed opaque token: b64url(email):b64url(role):expires_ts:hmac."""
     b64_email = base64.urlsafe_b64encode(email.encode()).decode().rstrip("=")
+    b64_role  = base64.urlsafe_b64encode(role.encode()).decode().rstrip("=")
     expires_ts = int(time.time()) + _SESSION_TTL
-    payload = f"{b64_email}:{expires_ts}"
+    payload = f"{b64_email}:{b64_role}:{expires_ts}"
     sig = _hmac_mod.new(_SESSION_SECRET.encode(), payload.encode(), "sha256").hexdigest()
     return f"{payload}:{sig}"
 
 
-def validate_session_token(token: str) -> str | None:
-    """Return the email from a valid non-expired token, or None."""
+def validate_session_token(token: str) -> dict[str, str] | None:
+    """Return {"email": ..., "role": ...} for a valid non-expired token, or None."""
     try:
-        parts = token.split(":", 2)
-        if len(parts) != 3:
+        parts = token.split(":", 3)
+        if len(parts) != 4:
             return None
-        b64_email, expires_ts_str, sig = parts
-        payload = f"{b64_email}:{expires_ts_str}"
+        b64_email, b64_role, expires_ts_str, sig = parts
+        payload = f"{b64_email}:{b64_role}:{expires_ts_str}"
         expected = _hmac_mod.new(_SESSION_SECRET.encode(), payload.encode(), "sha256").hexdigest()
         if not secrets.compare_digest(sig, expected):
             return None
         if time.time() > int(expires_ts_str):
             return None
-        # Restore base64 padding before decoding
-        padding = (4 - len(b64_email) % 4) % 4
-        return base64.urlsafe_b64decode(b64_email + "=" * padding).decode()
+
+        def _b64d(s: str) -> str:
+            return base64.urlsafe_b64decode(s + "=" * ((4 - len(s) % 4) % 4)).decode()
+
+        return {"email": _b64d(b64_email), "role": _b64d(b64_role)}
     except Exception:
         return None
 
@@ -144,6 +148,51 @@ def _is_pin_rate_limited(email: str) -> bool:
 def _clear_pin_attempts(email: str) -> None:
     with _pin_lock:
         _pin_attempts.pop(email, None)
+
+
+# ── password verify rate-limiter (5 fails / 10 min per email) ─────────────────
+_pw_attempts: dict[str, list[float]] = {}
+_pw_lock = threading.Lock()
+
+
+def _record_failed_password_attempt(email: str) -> None:
+    now = time.monotonic()
+    with _pw_lock:
+        recent = [t for t in _pw_attempts.get(email, []) if t > now - _PIN_WINDOW_SECONDS]
+        recent.append(now)
+        _pw_attempts[email] = recent
+
+
+def _is_password_rate_limited(email: str) -> bool:
+    now = time.monotonic()
+    cutoff = now - _PIN_WINDOW_SECONDS
+    with _pw_lock:
+        recent = [t for t in _pw_attempts.get(email, []) if t > cutoff]
+        _pw_attempts[email] = recent
+        return len(recent) >= _PIN_MAX_ATTEMPTS
+
+
+# ── send-pin rate-limiter (3 sends / 10 min per email) ────────────────────────
+_sendpin_attempts: dict[str, list[float]] = {}
+_sendpin_lock = threading.Lock()
+_SENDPIN_MAX = 3
+
+
+def _record_failed_sendpin_attempt(email: str) -> None:
+    now = time.monotonic()
+    with _sendpin_lock:
+        recent = [t for t in _sendpin_attempts.get(email, []) if t > now - _PIN_WINDOW_SECONDS]
+        recent.append(now)
+        _sendpin_attempts[email] = recent
+
+
+def _is_sendpin_rate_limited(email: str) -> bool:
+    now = time.monotonic()
+    cutoff = now - _PIN_WINDOW_SECONDS
+    with _sendpin_lock:
+        recent = [t for t in _sendpin_attempts.get(email, []) if t > cutoff]
+        _sendpin_attempts[email] = recent
+        return len(recent) >= _SENDPIN_MAX
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +338,7 @@ def signup_admin(email: str, password: str) -> SignupResponse:
             doc_ref.create({
                 "email": email.strip().lower(),
                 "password": _hash_password(password),
+                "role": "admin",
                 "createdAt": now.isoformat(),
                 "updatedAt": now.isoformat(),
             })
@@ -389,8 +439,9 @@ def verify_admin_pin(pin: str, email: str) -> VerifyPinResponse:
         # Success — clear rate-limit, invalidate PIN, issue session token
         _clear_pin_attempts(email)
         doc.reference.set({"pin": None, "pinExpiresAt": None}, merge=True)
-        token = _generate_session_token(email)
-        return VerifyPinResponse(success=True, token=token)
+        role = data.get("role") or "admin"  # default admin for legacy accounts without a role field
+        token = _generate_session_token(email, role)
+        return VerifyPinResponse(success=True, token=token, role=role)
     except Exception as exc:  # noqa: BLE001
         logging.exception("verify_admin_pin failed")
         return VerifyPinResponse(success=False, error="A server error occurred. Try again.")

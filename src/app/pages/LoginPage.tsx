@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { sendAdminPin, verifyAdminPassword, verifyAdminPin, checkAdminEmail, signupAdmin, setAuthToken } from "../lib/api";
+import { sendAdminPin, verifyAdminPassword, verifyAdminPin, checkAdminEmail, signupAdmin, setAuthToken, clearAuthSession } from "../lib/api";
 import { toast } from "sonner";
 
 type Step = "email" | "login" | "signup" | "pin";
@@ -93,8 +93,10 @@ export function LoginPage() {
     try {
       const result = await verifyAdminPin(email, pin);
       if (result.success) {
+        clearAuthSession(); // clear any stale previous session first
         localStorage.setItem("studyPlannerEmail", email);
         localStorage.setItem("studyPlannerAdmin", "true");
+        localStorage.setItem("studyPlannerRole", result.role ?? "admin");
         if (result.token) setAuthToken(result.token);
         toast.success("Welcome to Study Planner!");
         navigate("/admin");

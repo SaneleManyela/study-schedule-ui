@@ -67,6 +67,7 @@ export function clearAuthSession(): void {
   localStorage.removeItem(_LS_TOKEN);
   localStorage.removeItem(_LS_ADMIN);
   localStorage.removeItem(_LS_EMAIL);
+  localStorage.removeItem("studyPlannerRole");
 }
 
 /** Build a proxy URL that fetches `targetUrl` server-side, stripping X-Frame-Options.
@@ -140,6 +141,15 @@ export interface AuthResult {
   error?: string | null;
 }
 
+export interface PinVerifyResult extends AuthResult {
+  token?: string | null;
+  role?: string | null;
+}
+
+export function getRole(): string | null {
+  return localStorage.getItem("studyPlannerRole");
+}
+
 export function verifyAdminPassword(email: string, password: string): Promise<AuthResult> {
   return requestJson<AuthResult>("/api/auth/verify-password", {
     method: "POST",
@@ -168,8 +178,8 @@ export function sendAdminPin(email: string): Promise<AuthResult> {
   });
 }
 
-export function verifyAdminPin(email: string, pin: string): Promise<AuthResult> {
-  return requestJson<AuthResult>("/api/auth/verify-pin", {
+export function verifyAdminPin(email: string, pin: string): Promise<PinVerifyResult> {
+  return requestJson<PinVerifyResult>("/api/auth/verify-pin", {
     method: "POST",
     body: JSON.stringify({ email, pin }),
   });
