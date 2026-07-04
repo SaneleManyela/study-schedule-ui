@@ -34,18 +34,22 @@ import {
   loadLocal,
   saveLocal,
   LS_COURSES,
+  LS_CATEGORIES,
   listCourses,
+  listCategories,
   createCourse as apiCreateCourse,
   updateCourse as apiUpdateCourse,
   deleteCourse as apiDeleteCourse,
   type Course,
   type CourseStatus,
   type CreateCoursePayload,
+  type Category,
 } from "../lib/api";
 import { toast } from "sonner";
 import { cn } from "../components/ui/utils";
 
-const CATEGORIES = ["Programming", "Design & UI/UX", "Business & Marketing", "Data Science & AI", "Language", "Other"];
+const DEFAULT_CATEGORY_NAMES = ["Programming", "Design & UI/UX", "Business & Marketing", "Data Science & AI", "Language", "Other"];
+
 const STATUS_OPTIONS: { value: CourseStatus; label: string }[] = [
   { value: "shelf", label: "Shelf" },
   { value: "enrolled", label: "Enrolled" },
@@ -80,13 +84,14 @@ type DialogMode = "add" | "edit";
 export function CourseOverviewPage() {
   const navigate = useNavigate();
   const [courses, setCourses] = useState<Course[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<DialogMode>("add");
   const [editTarget, setEditTarget] = useState<Course | null>(null);
 
   const [formName, setFormName] = useState("");
   const [formStatus, setFormStatus] = useState<CourseStatus>("shelf");
-  const [formCategory, setFormCategory] = useState(CATEGORIES[0]);
+  const [formCategory, setFormCategory] = useState("");
   const [formCertificate, setFormCertificate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -94,9 +99,27 @@ export function CourseOverviewPage() {
 
   useEffect(() => {
     listCourses()
-      .then((data) => { setCourses(data); saveLocal(LS_COURSES, data); })
+      .then((data) => {
+        if (data.length > 0) { setCourses(data); saveLocal(LS_COURSES, data); }
+        else { setCourses(loadLocal<Course>(LS_COURSES)); }
+      })
       .catch(() => { setCourses(loadLocal<Course>(LS_COURSES)); setUseRemote(false); });
+
+    listCategories()
+      .then((data) => {
+        if (data.length > 0) { setCategories(data); saveLocal(LS_CATEGORIES, data); }
+        else {
+          const stored = loadLocal<Category>(LS_CATEGORIES);
+          setCategories(stored.length ? stored : DEFAULT_CATEGORY_NAMES.map((name, i) => ({ id: `default-${i}`, name, createdAt: "", updatedAt: "" })));
+        }
+      })
+      .catch(() => {
+        const stored = loadLocal<Category>(LS_CATEGORIES);
+        setCategories(stored.length ? stored : DEFAULT_CATEGORY_NAMES.map((name, i) => ({ id: `default-${i}`, name, createdAt: "", updatedAt: "" })));
+      });
   }, []);
+
+  const categoryNames = categories.map((c) => c.name);
 
   const persist = (next: Course[]) => {
     setCourses(next);
@@ -116,7 +139,7 @@ export function CourseOverviewPage() {
     setEditTarget(null);
     setFormName("");
     setFormStatus("shelf");
-    setFormCategory(CATEGORIES[0]);
+    setFormCategory(categoryNames[0] ?? "");
     setFormCertificate(false);
     setDialogOpen(true);
   };
@@ -126,7 +149,7 @@ export function CourseOverviewPage() {
     setEditTarget(course);
     setFormName(course.name);
     setFormStatus(course.status);
-    setFormCategory(course.category ?? CATEGORIES[0]);
+    setFormCategory(course.category ?? categoryNames[0] ?? "");
     setFormCertificate(course.hasCertificate ?? false);
     setDialogOpen(true);
   };
@@ -345,7 +368,7 @@ export function CourseOverviewPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-card border-border">
-                  {CATEGORIES.map((cat) => (
+                  {categoryNames.map((cat) => (
                     <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                   ))}
                 </SelectContent>

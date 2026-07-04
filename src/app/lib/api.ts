@@ -103,12 +103,18 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (response.status === 401) {
     clearAuthSession();
+    window.location.href = "/login";
     throw new Error("Session expired. Please log in again.");
   }
 
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || `Request failed with status ${response.status}`);
+  }
+
+  // 204 No Content — nothing to parse (DELETE endpoints)
+  if (response.status === 204 || response.headers.get("content-length") === "0") {
+    return undefined as T;
   }
 
   return (await response.json()) as T;
@@ -228,9 +234,93 @@ export function deleteCourse(id: string): Promise<void> {
   return requestJson<void>(`/api/courses/${id}`, { method: "DELETE" });
 }
 
-// ─── Library Items ────────────────────────────────────────────────────────────
+// ─── Categories ───────────────────────────────────────────────────────────────
 
-export type LibraryItemType = "pdf" | "url" | "gdrive";
+export const LS_CATEGORIES = "studyPlannerCategories";
+
+export interface Category {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function listCategories(): Promise<Category[]> {
+  return requestJson<Category[]>("/api/categories");
+}
+
+export function createCategory(name: string): Promise<Category> {
+  return requestJson<Category>("/api/categories", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function updateCategory(id: string, name: string): Promise<Category> {
+  return requestJson<Category>(`/api/categories/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteCategory(id: string): Promise<void> {
+  return requestJson<void>(`/api/categories/${id}`, { method: "DELETE" });
+}
+
+// ─── Languages ────────────────────────────────────────────────────────────────
+
+export const LS_LANGUAGES = "studyPlannerLanguages";
+
+export type LanguageLevel =
+  | "Beginner"
+  | "Elementary"
+  | "Intermediate"
+  | "Upper-Intermediate"
+  | "Advanced"
+  | "Fluent"
+  | "Native";
+
+export const LANGUAGE_LEVELS: LanguageLevel[] = [
+  "Beginner",
+  "Elementary",
+  "Intermediate",
+  "Upper-Intermediate",
+  "Advanced",
+  "Fluent",
+  "Native",
+];
+
+export interface Language {
+  id: string;
+  name: string;
+  level: LanguageLevel;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function listLanguages(): Promise<Language[]> {
+  return requestJson<Language[]>("/api/languages");
+}
+
+export function createLanguage(name: string, level: LanguageLevel): Promise<Language> {
+  return requestJson<Language>("/api/languages", {
+    method: "POST",
+    body: JSON.stringify({ name, level }),
+  });
+}
+
+export function updateLanguage(id: string, name: string, level: LanguageLevel): Promise<Language> {
+  return requestJson<Language>(`/api/languages/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ name, level }),
+  });
+}
+
+export function deleteLanguage(id: string): Promise<void> {
+  return requestJson<void>(`/api/languages/${id}`, { method: "DELETE" });
+}
+
+// ─── Library Items ────────────────────────────────────────────────────────────
 
 export interface LibraryItem {
   id: string;

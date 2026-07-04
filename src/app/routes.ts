@@ -8,11 +8,15 @@ import { StudyPlanPage } from "./pages/StudyPlanPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { CourseDetailPage } from "./pages/CourseDetailPage";
 import { CourseNotesPage } from "./pages/CourseNotesPage";
+import { CategoriesPage } from "./pages/CategoriesPage";
+import { LanguagesPage } from "./pages/LanguagesPage";
 
 function getSession() {
   const loggedIn = localStorage.getItem("studyPlannerAdmin") === "true";
-  const role = localStorage.getItem("studyPlannerRole") ?? "admin"; // default admin for legacy sessions
-  return loggedIn ? role : null;
+  const token = localStorage.getItem("studyPlannerToken");
+  const role = localStorage.getItem("studyPlannerRole") ?? "admin";
+  // Must have both the admin flag AND a session token
+  return (loggedIn && token) ? role : null;
 }
 
 function requireAuth() {
@@ -49,6 +53,8 @@ export const router = createBrowserRouter(
         { path: "calendar", Component: StudyCalendarPage },
         { path: "study-plan", Component: StudyPlanPage },
         { path: "library", Component: LibraryPage },
+        { path: "categories", Component: CategoriesPage },
+        { path: "languages", Component: LanguagesPage },
         // ── user role only: notes belong to users, not admins ──────────────
         { path: "courses/:id/notes", loader: requireAuth, Component: CourseNotesPage },
       ],
