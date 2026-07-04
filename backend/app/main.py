@@ -83,6 +83,7 @@ _AUTH_EXEMPT = frozenset([
     "/api/auth/send-pin",
     "/api/auth/verify-pin",
     "/api/auth/signup",
+    "/api/proxy",
 ])
 
 

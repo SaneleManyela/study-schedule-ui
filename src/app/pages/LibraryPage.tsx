@@ -360,17 +360,28 @@ export function LibraryPage() {
                 <div className="rounded-full bg-muted p-5">
                   <Globe className="h-12 w-12 text-muted-foreground" />
                 </div>
-                <div className="space-y-2 max-w-sm">
+                <div className="space-y-3 max-w-sm">
                   <p className="text-base font-semibold">This resource cannot be embedded</p>
                   <p className="text-sm text-muted-foreground">
-                    The site requires you to sign in directly in your browser. Copy the link below and open it in your browser to access the content.
+                    The site requires you to sign in directly in your browser. Open it below to access the content.
                   </p>
                   {urlEmbedReason && (
-                    <p className="text-xs text-muted-foreground opacity-60 mt-1">Reason: {urlEmbedReason}</p>
+                    <p className="text-xs text-muted-foreground opacity-60">Reason: {urlEmbedReason}</p>
                   )}
-                  <div className="mt-3 flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2">
-                    <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="text-xs break-all text-left select-all">{viewerItem.content}</span>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2">
+                      <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="text-xs break-all text-left select-all">{viewerItem.content}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs w-full"
+                      onClick={() => window.open(viewerItem.content, "_blank", "noopener,noreferrer")}
+                    >
+                      <Globe className="h-3.5 w-3.5" />
+                      Open in Browser
+                    </Button>
                   </div>
                 </div>
               </div>
