@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { cn } from "../components/ui/utils";
-import { loadLocal, LS_COURSES, type Course } from "../lib/api";
+import { loadLocal, LS_COURSES, type Course, clearAuthSession } from "../lib/api";
 
 const NAV_ITEMS = [
   { label: "Dashboard", to: "/admin", icon: LayoutDashboard, end: true },
@@ -38,8 +38,7 @@ export function AdminLayout() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("studyPlannerAdmin");
-    localStorage.removeItem("studyPlannerEmail");
+    clearAuthSession();
     navigate("/login");
   };
 

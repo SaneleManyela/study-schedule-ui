@@ -42,19 +42,68 @@ export interface CreateStudyPlanPayload {
   resourceUrl?: string;
 }
 
+// Empty string = relative URLs, proxied by Vite in dev and nginx in production.
+// Set VITE_API_BASE_URL at build time when the backend is on a separate origin
+// (e.g. a dedicated cloud server). Using relative URLs is always preferred
+// because it prevents mixed-content blocks when the frontend is on HTTPS.
 const API_BASE_URL =
   ((import.meta as unknown as { env?: Record<string, string | undefined> }).env
-    ?.VITE_API_BASE_URL as string | undefined)?.trim() ||
-  "http://127.0.0.1:8000";
+    ?.VITE_API_BASE_URL as string | undefined)?.trim() ??
+  "";
+
+// ---------------------------------------------------------------------------
+// Session token management
+// ---------------------------------------------------------------------------
+
+const _LS_TOKEN = "studyPlannerToken";
+const _LS_ADMIN = "studyPlannerAdmin";
+const _LS_EMAIL = "studyPlannerEmail";
+
+export function setAuthToken(token: string): void {
+  localStorage.setItem(_LS_TOKEN, token);
+}
+
+export function clearAuthSession(): void {
+  localStorage.removeItem(_LS_TOKEN);
+  localStorage.removeItem(_LS_ADMIN);
+  localStorage.removeItem(_LS_EMAIL);
+}
+
+/** Build a proxy URL that fetches `targetUrl` server-side, stripping X-Frame-Options.
+ *
+ * Returns a relative path (/api/proxy?url=...) when API_BASE_URL is not set,
+ * so the browser resolves it against the current page origin. This prevents
+ * mixed-content errors when the frontend is served over HTTPS.
+ */
+export function proxyUrl(targetUrl: string): string {
+  return `${API_BASE_URL}/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+}
+
+/** Check whether a URL can be safely embedded in an iframe.
+ * Returns { embeddable: boolean, reason: string | null }.
+ * Uses the backend proxy's ?info=1 mode so the check is server-side.
+ */
+export async function checkEmbeddable(targetUrl: string): Promise<{ embeddable: boolean; reason: string | null }> {
+  const resp = await fetch(`${API_BASE_URL}/api/proxy?url=${encodeURIComponent(targetUrl)}&info=1`);
+  if (!resp.ok) return { embeddable: false, reason: `proxy check failed (${resp.status})` };
+  return resp.json() as Promise<{ embeddable: boolean; reason: string | null }>;
+}
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = localStorage.getItem(_LS_TOKEN);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { "Authorization": `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
   });
+
+  if (response.status === 401) {
+    clearAuthSession();
+    throw new Error("Session expired. Please log in again.");
+  }
 
   if (!response.ok) {
     const text = await response.text();
@@ -171,7 +220,7 @@ export function deleteCourse(id: string): Promise<void> {
 
 // ─── Library Items ────────────────────────────────────────────────────────────
 
-export type LibraryItemType = "pdf" | "url";
+export type LibraryItemType = "pdf" | "url" | "gdrive";
 
 export interface LibraryItem {
   id: string;
@@ -193,13 +242,40 @@ export interface CreateLibraryItemPayload {
   content: string;
 }
 
+export interface UpdateLibraryItemPayload {
+  courseId?: string;
+  courseName?: string;
+  title?: string;
+  type?: LibraryItemType;
+  content?: string;
+}
+
 export function listLibraryItems(): Promise<LibraryItem[]> {
   return requestJson<LibraryItem[]>("/api/library");
+}
+
+export function getLibraryItem(id: string): Promise<LibraryItem> {
+  return requestJson<LibraryItem>(`/api/library/${id}`);
 }
 
 export function createLibraryItem(payload: CreateLibraryItemPayload): Promise<LibraryItem> {
   return requestJson<LibraryItem>("/api/library", {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface UpdateLibraryItemPayload {
+  courseId?: string;
+  courseName?: string;
+  title?: string;
+  type?: LibraryItemType;
+  content?: string;
+}
+
+export function updateLibraryItem(id: string, payload: UpdateLibraryItemPayload): Promise<LibraryItem> {
+  return requestJson<LibraryItem>(`/api/library/${id}`, {
+    method: "PUT",
     body: JSON.stringify(payload),
   });
 }

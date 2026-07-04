@@ -1,7 +1,14 @@
 """FastAPI application entrypoint for the calendar and study planner backend."""
 
-from fastapi import FastAPI
+import ipaddress
+import logging
+import re
+import urllib.parse
+
+import requests as _requests
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 
 from .models import (
     HealthResponse,
@@ -23,6 +30,7 @@ from .models import (
     CourseItem,
     CourseUpdate,
     LibraryItemCreate,
+    LibraryItemUpdate,
     LibraryItem,
     CourseNoteUpsert,
     CourseNoteItem,
@@ -32,8 +40,9 @@ from .service import (
     verify_admin_password, send_admin_pin, verify_admin_pin,
     check_admin_email, signup_admin,
     list_courses, create_course, update_course, delete_course,
-    list_library_items, create_library_item, delete_library_item,
+    list_library_items, get_library_item, create_library_item, update_library_item, delete_library_item,
     get_course_note, upsert_course_note,
+    validate_session_token,
 )
 
 
@@ -66,6 +75,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Paths that do not require a session token.
+_AUTH_EXEMPT = frozenset([
+    "/api/health",
+    "/api/auth/check-email",
+    "/api/auth/verify-password",
+    "/api/auth/send-pin",
+    "/api/auth/verify-pin",
+    "/api/auth/signup",
+])
+
+
+@app.middleware("http")
+async def _authenticate(request: Request, call_next):
+    """Reject requests to protected endpoints that lack a valid session token.
+
+    The CORS middleware (registered above) is outermost, so CORS headers are
+    always present on the response—including these 401 short-circuits—which
+    prevents the browser from swallowing the 401 as a CORS error.
+    OPTIONS preflight requests never carry auth headers; they are always
+    passed through unconditionally.
+    """
+    if request.method == "OPTIONS" or request.url.path in _AUTH_EXEMPT:
+        return await call_next(request)
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"detail": "Authentication required."})
+    if validate_session_token(auth[7:]) is None:
+        return JSONResponse(status_code=401, content={"detail": "Invalid or expired session. Please log in again."})
+    return await call_next(request)
+
 
 @app.get("/api/health", response_model=HealthResponse)
 def health() -> HealthResponse:
@@ -89,8 +128,10 @@ def get_schedules() -> list[ScheduleItem]:
 @app.post("/api/schedules", response_model=ScheduleItem)
 def post_schedule(payload: ScheduleCreate) -> ScheduleItem:
     """Create a schedule entry in Firestore."""
-
-    return create_schedule(payload)
+    try:
+        return create_schedule(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/study-plans", response_model=list[StudyPlanItem])
@@ -171,14 +212,175 @@ def get_library() -> list[LibraryItem]:
     return list_library_items()
 
 
+@app.get("/api/library/{item_id}", response_model=LibraryItem)
+def get_library_item_by_id(item_id: str) -> LibraryItem:
+    """Return a single library item with its full content (e.g. base64 PDF)."""
+    item = get_library_item(item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Library item not found.")
+    return item
+
+
+@app.put("/api/library/{item_id}", response_model=LibraryItem)
+def put_library_item(item_id: str, payload: LibraryItemUpdate) -> LibraryItem:
+    """Partially update a library item."""
+    item = update_library_item(item_id, payload)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Library item not found.")
+    return item
+
+
 @app.post("/api/library", response_model=LibraryItem)
 def post_library_item(payload: LibraryItemCreate) -> LibraryItem:
-    return create_library_item(payload)
+    logger = logging.getLogger(__name__)
+    try:
+        return create_library_item(payload)
+    except ValueError as exc:
+        logger.warning("Library item rejected (bad input): %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        # Handles requests.HTTPError and other download failures
+        logger.error("Google Drive download failed for %r: %s", payload.content, exc, exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Failed to download document: {exc}") from exc
 
 
 @app.delete("/api/library/{item_id}", status_code=204)
 def remove_library_item(item_id: str) -> None:
     delete_library_item(item_id)
+
+
+@app.patch("/api/library/{item_id}", response_model=LibraryItem)
+def patch_library_item(item_id: str, payload: LibraryItemUpdate) -> LibraryItem:
+    """Update title, course, or content of an existing library item."""
+    return update_library_item(item_id, payload)
+
+
+# ─── URL Proxy ────────────────────────────────────────────────────────────────
+
+_PRIVATE_NETS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+_STRIP_HEADERS = {"x-frame-options", "transfer-encoding", "content-encoding", "content-length"}
+
+
+def _is_private_host(hostname: str) -> bool:
+    """Return True if hostname resolves to a private/loopback address."""
+    if hostname.lower() in ("localhost",) or hostname.endswith(".local"):
+        return True
+    try:
+        addr = ipaddress.ip_address(hostname)
+        return any(addr in net for net in _PRIVATE_NETS)
+    except ValueError:
+        return False
+
+
+@app.get("/api/proxy")
+def proxy_url(
+    url: str = Query(..., description="The URL to proxy"),
+    info: bool = Query(False, description="When true, return embed-check JSON instead of full content"),
+) -> Response:
+    """Fetch an external URL server-side and return it stripped of frame-blocking headers.
+
+    When ?info=1 is passed, performs a lightweight HEAD/GET to check whether
+    the upstream page sets X-Frame-Options or CSP frame-ancestors, and returns
+    a small JSON payload:  { "embeddable": bool, "reason": str | null }
+    The frontend uses this to decide whether to show the proxy iframe or a
+    styled fallback panel — without ever loading a blank iframe.
+
+    Security:
+    - Only http/https schemes are permitted.
+    - Private, loopback, and link-local addresses are blocked (SSRF protection).
+    """
+    logger = logging.getLogger(__name__)
+
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only http/https URLs are supported.")
+
+    hostname = parsed.hostname or ""
+    if not hostname or _is_private_host(hostname):
+        raise HTTPException(status_code=400, detail="URL resolves to a disallowed address.")
+
+    if info:
+        # Lightweight embeddability check — HEAD first, fall back to GET.
+        try:
+            head = _requests.head(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+            check_resp = head
+        except Exception:
+            try:
+                check_resp = _requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True, stream=True)
+            except Exception as exc:
+                import json as _json
+                return Response(
+                    content=_json.dumps({"embeddable": False, "reason": f"unreachable: {exc}"}),
+                    media_type="application/json",
+                )
+        xfo = check_resp.headers.get("x-frame-options", "")
+        csp = check_resp.headers.get("content-security-policy", "")
+        has_block = bool(xfo) or ("frame-ancestors" in csp.lower())
+        import json as _json
+        reason = None
+        if xfo:
+            reason = f"X-Frame-Options: {xfo}"
+        elif "frame-ancestors" in csp.lower():
+            fa = next((p.strip() for p in csp.split(";") if "frame-ancestors" in p.lower()), csp)
+            reason = f"CSP {fa}"
+        return Response(
+            content=_json.dumps({"embeddable": not has_block, "reason": reason}),
+            media_type="application/json",
+        )
+
+    try:
+        resp = _requests.get(
+            url,
+            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0"},
+            allow_redirects=True,
+        )
+    except Exception as exc:
+        logger.error("Proxy fetch failed for %r: %s", url, exc)
+        raise HTTPException(status_code=502, detail=f"Failed to fetch URL: {exc}") from exc
+
+    content_type = resp.headers.get("Content-Type", "text/html")
+    body = resp.content
+
+    # For HTML, inject a <base> tag so relative asset URLs resolve correctly
+    # against the origin site, not our proxy origin.
+    if "text/html" in content_type:
+        html = resp.text
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        base_tag = f'<base href="{base_url}/">'
+        if "<base" not in html:
+            if "<head>" in html:
+                html = html.replace("<head>", f"<head>{base_tag}", 1)
+            elif "<HEAD>" in html:
+                html = html.replace("<HEAD>", f"<HEAD>{base_tag}", 1)
+            else:
+                html = base_tag + html
+        body = html.encode("utf-8", errors="replace")
+
+    # Build clean response headers, stripping frame-blocking directives.
+    clean_headers: dict[str, str] = {}
+    for key, value in resp.headers.items():
+        key_lower = key.lower()
+        if key_lower in _STRIP_HEADERS:
+            continue
+        if key_lower == "content-security-policy":
+            # Remove only the frame-ancestors directive; keep the rest.
+            value = re.sub(r"frame-ancestors[^;]*;?\s*", "", value, flags=re.IGNORECASE).strip().rstrip(";")
+            if not value:
+                continue
+        clean_headers[key] = value
+
+    mime = content_type.split(";")[0].strip()
+    return Response(content=body, media_type=mime, headers=clean_headers)
 
 
 # ─── Course Notes ─────────────────────────────────────────────────────────────

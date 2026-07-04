@@ -94,28 +94,12 @@ class VerifyPinRequest(BaseModel):
 class VerifyPinResponse(BaseModel):
     success: bool
     error: str | None = None
+    token: str | None = None  # Opaque session token returned on successful PIN verification
 
 
 class SendPinResponse(BaseModel):
     success: bool
     error: str | None = None
-
-
-class CheckEmailRequest(BaseModel):
-    """Incoming payload for POST /api/auth/check-email."""
-
-    email: str = Field(..., min_length=3, max_length=254)
-
-
-class CheckEmailResponse(BaseModel):
-    exists: bool
-
-
-class SignupRequest(BaseModel):
-    """Incoming payload for POST /api/auth/signup."""
-
-    email: str = Field(..., min_length=3, max_length=254)
-    password: str = Field(..., min_length=8, max_length=256)
 
 
 class SignupResponse(BaseModel):
@@ -151,14 +135,26 @@ class LibraryItemCreate(BaseModel):
     courseId: str = Field(..., min_length=1, max_length=200)
     courseName: str = Field(..., min_length=1, max_length=200)
     title: str = Field(..., min_length=1, max_length=200)
-    type: str = Field(..., pattern="^(pdf|url)$")
-    content: str = Field(..., min_length=1)  # base64 data URI for PDFs, plain URL for links
+    type: str = Field(..., pattern="^(pdf|url|gdrive)$")
+    content: str = Field(..., min_length=1)  # base64 data URI for PDFs, plain URL for links, embed URL for gdrive
+
+class LibraryItemUpdate(BaseModel):
+    """Partial update for a library item. Omit fields to leave them unchanged.
+    To replace PDF content supply a new base64 data URI; for URLs supply a new URL."""
+    courseId: str | None = Field(default=None, min_length=1, max_length=200)
+    courseName: str | None = Field(default=None, min_length=1, max_length=200)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    type: str | None = Field(default=None, pattern="^(pdf|url|gdrive)$")
+    content: str | None = Field(default=None, min_length=1)
 
 
 class LibraryItem(LibraryItemCreate):
     id: str
     createdAt: str
     updatedAt: str
+    # Overrides the min_length=1 from LibraryItemCreate — content may be empty
+    # in list responses where PDF base64 is stripped to keep payloads small.
+    content: str = Field(default="")
 
 
 # ─── Course Notes ─────────────────────────────────────────────────────────────

@@ -1,5 +1,32 @@
 import { useEffect, useRef, useState } from "react";
-import { Upload, BookMarked, X, ExternalLink, FileText, Globe } from "lucide-react";
+
+// Extract the Google Drive file ID from a share URL.
+// Returns the file ID string if the URL is a recognised Drive link, otherwise null.
+function parseGdriveUrl(url: string): string | null {
+  const m = /drive\.google\.com\/(?:file\/d\/|uc\?.*id=)([a-zA-Z0-9_-]+)/.exec(url);
+  return m ? m[1] : null;
+}
+
+// Normalise any Google Drive URL to the embeddable /preview URL.
+// The /view?usp=sharing URL is blocked by X-Frame-Options; /preview is allowed.
+// Passes through data URIs and non-Drive URLs unchanged.
+function normalizeGdriveContent(content: string): string {
+  if (!content || content.startsWith("data:") || content.endsWith("/preview")) return content;
+  const fileId = parseGdriveUrl(content);
+  return fileId ? `https://drive.google.com/file/d/${fileId}/preview` : content;
+}
+
+// Convert a base64 data URI to a Blob URL so browsers render PDFs inline
+// instead of triggering a download prompt.
+function dataUriToBlobUrl(dataUri: string): string {
+  const [header, b64] = dataUri.split(",");
+  const mime = header.split(":")[1].split(";")[0];
+  const bytes = atob(b64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return URL.createObjectURL(new Blob([arr], { type: mime }));
+}
+import { Upload, BookMarked, X, FileText, Globe, Pencil, FolderOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -25,8 +52,12 @@ import {
   LS_LIBRARY,
   listCourses,
   listLibraryItems,
+  getLibraryItem,
   createLibraryItem as apiCreateLibraryItem,
+  updateLibraryItem as apiUpdateLibraryItem,
   deleteLibraryItem as apiDeleteLibraryItem,
+  proxyUrl,
+  checkEmbeddable,
   type Course,
   type LibraryItem,
   type LibraryItemType,
@@ -41,6 +72,40 @@ export function LibraryPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [items, setItems] = useState<LibraryItem[]>(() => loadLocal<LibraryItem>(LS_LIBRARY));
   const [viewerItem, setViewerItem] = useState<LibraryItem | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  // Embed check for URL items: "checking" | "ok" | "blocked"
+  const [urlEmbedState, setUrlEmbedState] = useState<"checking" | "ok" | "blocked">("checking");
+  const [urlEmbedReason, setUrlEmbedReason] = useState<string | null>(null);
+
+  // Run embeddability check whenever a URL item is opened.
+  useEffect(() => {
+    if (viewerItem?.type !== "url") return;
+    setUrlEmbedState("checking");
+    setUrlEmbedReason(null);
+    checkEmbeddable(viewerItem.content)
+      .then(({ embeddable, reason }) => {
+        setUrlEmbedState(embeddable ? "ok" : "blocked");
+        setUrlEmbedReason(reason);
+      })
+      .catch(() => {
+        // If the check itself fails (e.g. backend unreachable), try to embed anyway.
+        setUrlEmbedState("ok");
+      });
+  }, [viewerItem?.id, viewerItem?.type]);
+  // Convert data URI → blob URL whenever viewerItem content changes.
+  // Revoke the previous blob URL to avoid memory leaks.
+  useEffect(() => {
+    let url: string | null = null;
+    if (viewerItem?.type === "pdf" && viewerItem.content) {
+      try { url = dataUriToBlobUrl(viewerItem.content); } catch { /* invalid data URI */ }
+    }
+    if (viewerItem?.type === "gdrive" && viewerItem.content && viewerItem.content.startsWith("data:")) {
+      try { url = dataUriToBlobUrl(viewerItem.content); } catch { /* invalid data URI */ }
+    }
+    setPdfBlobUrl(url);
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [viewerItem?.content]);
 
   // upload form
   const [uploadCourseId, setUploadCourseId] = useState("");
@@ -53,6 +118,15 @@ export function LibraryPage() {
 
   // delete confirm
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // edit dialog
+  const [editItem, setEditItem] = useState<LibraryItem | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editCourseId, setEditCourseId] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const editFileRef = useRef<HTMLInputElement>(null);
+  const [editLoading, setEditLoading] = useState(false);
 
   const [useRemote, setUseRemote] = useState(true);
 
@@ -84,6 +158,12 @@ export function LibraryPage() {
         // basic URL validation
         try { new URL(uploadUrl.trim()); } catch { toast.error("Invalid URL."); setUploadLoading(false); return; }
         content = uploadUrl.trim();
+      } else if (uploadType === "gdrive") {
+        if (!uploadUrl.trim()) { toast.error("Google Drive link is required."); setUploadLoading(false); return; }
+        // Validate it looks like a Drive link before sending to backend
+        if (!parseGdriveUrl(uploadUrl.trim())) { toast.error("Invalid Google Drive URL. Paste the share link from Google Drive."); setUploadLoading(false); return; }
+        // Send the raw share URL — the backend will download the PDF and store it as base64
+        content = uploadUrl.trim();
       } else {
         // PDF upload → base64
         if (!uploadFile) { toast.error("Select a PDF file."); setUploadLoading(false); return; }
@@ -108,7 +188,12 @@ export function LibraryPage() {
         } catch {
           setUseRemote(false);
           const now = new Date().toISOString();
-          newItem = { id: `${Date.now()}-${Math.random()}`, ...payload, createdAt: now, updatedAt: now };
+          // For gdrive items, store the preview URL so the viewer can embed it.
+          // Storing the raw share URL causes X-Frame-Options blocks in the iframe.
+          const fallbackContent = payload.type === "gdrive"
+            ? normalizeGdriveContent(payload.content)
+            : payload.content;
+          newItem = { id: `${Date.now()}-${Math.random()}`, ...payload, content: fallbackContent, createdAt: now, updatedAt: now };
         }
       } else {
         const now = new Date().toISOString();
@@ -128,9 +213,22 @@ export function LibraryPage() {
     }
   };
 
-  const openViewer = (item: LibraryItem) => {
-    setViewerItem(item);
+  const openViewer = async (item: LibraryItem) => {
+    setViewerItem(item); // show viewer immediately with metadata
     setView("viewer");
+    // Only fetch from DB when content is empty (stripped from Firestore list response).
+    // Items that were saved locally already carry their full base64 content.
+    if ((item.type === "pdf" || item.type === "gdrive") && !item.content) {
+      setViewerLoading(true);
+      try {
+        const full = await getLibraryItem(item.id);
+        setViewerItem(full);
+      } catch {
+        toast.error("Failed to load document from database.");
+      } finally {
+        setViewerLoading(false);
+      }
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -141,6 +239,56 @@ export function LibraryPage() {
     persist(next);
     toast.success("Item removed.");
     setDeleteId(null);
+  };
+
+  const openEdit = async (item: LibraryItem) => {
+    // For PDF items we need the full content to allow re-upload awareness
+    let full = item;
+    if ((item.type === "pdf" || item.type === "gdrive") && !item.content) {
+      try { full = await getLibraryItem(item.id); } catch { /* fall back to stub */ }
+    }
+    setEditItem(full);
+    setEditTitle(full.title);
+    setEditCourseId(full.courseId);
+    setEditUrl(full.type === "url" ? full.content : "");
+    setEditFile(null);
+    if (editFileRef.current) editFileRef.current.value = "";
+  };
+
+  const handleEdit = async () => {
+    if (!editItem) return;
+    if (!editTitle.trim()) { toast.error("Title is required."); return; }
+    setEditLoading(true);
+    try {
+      const course = courses.find((c) => c.id === editCourseId);
+      const patch: Record<string, string> = { title: editTitle.trim() };
+      if (course) { patch.courseId = course.id; patch.courseName = course.name; }
+      if (editItem.type === "url") {
+        if (!editUrl.trim()) { toast.error("URL is required."); setEditLoading(false); return; }
+        try { new URL(editUrl.trim()); } catch { toast.error("Invalid URL."); setEditLoading(false); return; }
+        patch.content = editUrl.trim();
+      } else if (editFile) {
+        patch.content = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(editFile);
+        });
+      }
+      let updated: LibraryItem;
+      if (useRemote) {
+        updated = await apiUpdateLibraryItem(editItem.id, patch);
+      } else {
+        updated = { ...editItem, ...patch, updatedAt: new Date().toISOString() };
+      }
+      persist(items.map((i) => i.id === updated.id ? { ...updated, content: i.content } : i));
+      toast.success("Item updated.");
+      setEditItem(null);
+    } catch {
+      toast.error("Failed to save changes.");
+    } finally {
+      setEditLoading(false);
+    }
   };
 
   // Group items by course
@@ -161,31 +309,81 @@ export function LibraryPage() {
           <Button variant="outline" onClick={() => setView("shelves")}>← Back to Shelves</Button>
         </div>
         <div className="flex-1 rounded-xl overflow-hidden border border-border" style={{ minHeight: "70vh" }}>
-          {viewerItem.type === "pdf" ? (
+          {viewerLoading ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3" style={{ minHeight: "70vh" }}>
+              <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              <p className="text-sm text-muted-foreground">Loading from database…</p>
+            </div>
+          ) : viewerItem.type === "pdf" ? (
             <iframe
-              src={viewerItem.content}
+              src={pdfBlobUrl ?? ""}
               title={viewerItem.title}
               className="w-full h-full"
               style={{ minHeight: "70vh" }}
             />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center" style={{ minHeight: "70vh" }}>
-              <ExternalLink className="h-16 w-16 text-primary/50" />
-              <div>
-                <p className="text-lg font-semibold">{viewerItem.title}</p>
-                <p className="text-muted-foreground text-sm mt-1 break-all max-w-xl">{viewerItem.content}</p>
+          ) : viewerItem.type === "gdrive" ? (
+            // Google Drive /preview iframes may be blocked by CSP frame-ancestors
+            // when embedded from non-Google origins (including localhost).
+            // We show the iframe optimistically and always surface an "Open in Drive"
+            // button so the document is accessible even if the embed is blank.
+            <div className="relative flex flex-col w-full h-full" style={{ minHeight: "70vh" }}>
+              <div className="flex items-center justify-end gap-2 px-3 py-2 border-b border-border bg-muted/40">
+                <span className="text-xs text-muted-foreground">If the preview is blank, open directly in Google Drive.</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs"
+                  onClick={() => window.open(normalizeGdriveContent(viewerItem.content).replace("/preview", "/view"), "_blank", "noopener,noreferrer")}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  Open in Google Drive
+                </Button>
               </div>
-              <p className="text-xs text-muted-foreground max-w-sm">
-                External websites cannot be embedded due to browser security restrictions.
-              </p>
-              <Button
-                className="bg-primary hover:bg-primary/80 gap-2"
-                onClick={() => window.open(viewerItem.content, "_blank", "noopener,noreferrer")}
-              >
-                <ExternalLink className="h-4 w-4" />
-                Open in new tab
-              </Button>
+              <iframe
+                src={normalizeGdriveContent(viewerItem.content)}
+                title={viewerItem.title}
+                className="w-full flex-1"
+                style={{ minHeight: "60vh" }}
+                allow="autoplay"
+              />
             </div>
+          ) : (
+            // URL items: check embeddability server-side first, then show iframe
+            // or a styled in-app fallback — never a blank black box.
+            urlEmbedState === "checking" ? (
+              <div className="flex flex-col items-center justify-center h-full gap-3" style={{ minHeight: "70vh" }}>
+                <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                <p className="text-sm text-muted-foreground">Checking resource…</p>
+              </div>
+            ) : urlEmbedState === "blocked" ? (
+              <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center" style={{ minHeight: "70vh" }}>
+                <div className="rounded-full bg-muted p-5">
+                  <Globe className="h-12 w-12 text-muted-foreground" />
+                </div>
+                <div className="space-y-2 max-w-sm">
+                  <p className="text-base font-semibold">This resource cannot be embedded</p>
+                  <p className="text-sm text-muted-foreground">
+                    The site requires you to sign in directly in your browser. Copy the link below and open it in your browser to access the content.
+                  </p>
+                  {urlEmbedReason && (
+                    <p className="text-xs text-muted-foreground opacity-60 mt-1">Reason: {urlEmbedReason}</p>
+                  )}
+                  <div className="mt-3 flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2">
+                    <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="text-xs break-all text-left select-all">{viewerItem.content}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <iframe
+                key={viewerItem.content}
+                src={proxyUrl(viewerItem.content)}
+                title={viewerItem.title}
+                className="w-full h-full"
+                style={{ minHeight: "70vh" }}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+              />
+            )
           )}
         </div>
       </div>
@@ -237,6 +435,7 @@ export function LibraryPage() {
                 <SelectContent className="bg-card border-border">
                   <SelectItem value="pdf">PDF / Book</SelectItem>
                   <SelectItem value="url">URL Link</SelectItem>
+                  <SelectItem value="gdrive">Google Drive PDF</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -252,6 +451,12 @@ export function LibraryPage() {
                   className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30 cursor-pointer"
                 />
                 {uploadFile && <p className="text-xs text-muted-foreground">{uploadFile.name}</p>}
+              </div>
+            ) : uploadType === "gdrive" ? (
+              <div className="space-y-1.5">
+                <Label className="font-semibold">Google Drive Share Link</Label>
+                <Input value={uploadUrl} onChange={(e) => setUploadUrl(e.target.value)} placeholder="https://drive.google.com/file/d/.../view?usp=sharing" className="bg-secondary border-border" />
+                <p className="text-xs text-muted-foreground">Paste the "Share" link from Google Drive. The file must be publicly accessible (Anyone with the link).</p>
               </div>
             ) : (
               <div className="space-y-1.5">
@@ -310,6 +515,8 @@ export function LibraryPage() {
                         <div className="flex items-center justify-center h-12">
                           {item.type === "pdf" ? (
                             <FileText className="h-10 w-10 text-primary/70" />
+                          ) : item.type === "gdrive" ? (
+                            <FolderOpen className="h-10 w-10 text-yellow-400/80" />
                           ) : (
                             <Globe className="h-10 w-10 text-primary/70" />
                           )}
@@ -317,15 +524,24 @@ export function LibraryPage() {
                         <p className="text-xs font-medium truncate text-center">{item.title}</p>
                         <div className="flex items-center justify-between mt-1">
                           <span className="text-[10px] text-muted-foreground uppercase">
-                            {item.type === "pdf" ? "PDF" : "Link"}
+                            {item.type === "pdf" ? "PDF" : item.type === "gdrive" ? "Drive" : "Link"}
                           </span>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setDeleteId(item.id); }}
-                            className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity"
-                            aria-label="Delete"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEdit(item); }}
+                              className="text-primary hover:text-primary/80"
+                              aria-label="Edit"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setDeleteId(item.id); }}
+                              className="text-destructive hover:text-destructive/80"
+                              aria-label="Delete"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -344,6 +560,52 @@ export function LibraryPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
               <Button variant="destructive" onClick={() => deleteId && handleDelete(deleteId)}>Remove</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit dialog */}
+        <Dialog open={!!editItem} onOpenChange={(open) => { if (!open) setEditItem(null); }}>
+          <DialogContent className="bg-card border-border sm:max-w-md">
+            <DialogHeader><DialogTitle>Edit Library Item</DialogTitle></DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label>Title</Label>
+                <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="bg-secondary border-border" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Course</Label>
+                <Select value={editCourseId} onValueChange={setEditCourseId}>
+                  <SelectTrigger className="bg-secondary border-border w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-card border-border">
+                    {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              {editItem?.type === "url" ? (
+                <div className="space-y-1.5">
+                  <Label>URL</Label>
+                  <Input value={editUrl} onChange={(e) => setEditUrl(e.target.value)} placeholder="https://..." className="bg-secondary border-border" />
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label>Replace PDF <span className="text-muted-foreground font-normal">(optional — leave blank to keep current)</span></Label>
+                  <input
+                    ref={editFileRef}
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
+                    className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30 cursor-pointer"
+                  />
+                  {editFile && <p className="text-xs text-muted-foreground">{editFile.name}</p>}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
+              <Button onClick={handleEdit} disabled={editLoading} className="bg-primary hover:bg-primary/80">
+                {editLoading ? "Saving…" : "Save Changes"}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

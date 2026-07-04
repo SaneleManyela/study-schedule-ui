@@ -43,6 +43,7 @@ import {
   type CreateCoursePayload,
 } from "../lib/api";
 import { toast } from "sonner";
+import { cn } from "../components/ui/utils";
 
 const CATEGORIES = ["Programming", "Design & UI/UX", "Business & Marketing", "Data Science & AI", "Language", "Other"];
 const STATUS_OPTIONS: { value: CourseStatus; label: string }[] = [
