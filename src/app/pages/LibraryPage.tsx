@@ -57,7 +57,6 @@ import {
   updateLibraryItem as apiUpdateLibraryItem,
   deleteLibraryItem as apiDeleteLibraryItem,
   proxyUrl,
-  checkEmbeddable,
   type Course,
   type LibraryItem,
   type LibraryItemType,
@@ -74,25 +73,7 @@ export function LibraryPage() {
   const [viewerItem, setViewerItem] = useState<LibraryItem | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-  // Embed check for URL items: "checking" | "ok" | "blocked"
-  const [urlEmbedState, setUrlEmbedState] = useState<"checking" | "ok" | "blocked">("checking");
-  const [urlEmbedReason, setUrlEmbedReason] = useState<string | null>(null);
 
-  // Run embeddability check whenever a URL item is opened.
-  useEffect(() => {
-    if (viewerItem?.type !== "url") return;
-    setUrlEmbedState("checking");
-    setUrlEmbedReason(null);
-    checkEmbeddable(viewerItem.content)
-      .then(({ embeddable, reason }) => {
-        setUrlEmbedState(embeddable ? "ok" : "blocked");
-        setUrlEmbedReason(reason);
-      })
-      .catch(() => {
-        // If the check itself fails (e.g. backend unreachable), try to embed anyway.
-        setUrlEmbedState("ok");
-      });
-  }, [viewerItem?.id, viewerItem?.type]);
   // Convert data URI → blob URL whenever viewerItem content changes.
   // Revoke the previous blob URL to avoid memory leaks.
   useEffect(() => {
@@ -348,53 +329,35 @@ export function LibraryPage() {
               />
             </div>
           ) : (
-            // URL items: check embeddability server-side first, then show iframe
-            // or a styled in-app fallback — never a blank black box.
-            urlEmbedState === "checking" ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3" style={{ minHeight: "70vh" }}>
-                <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                <p className="text-sm text-muted-foreground">Checking resource…</p>
+            // URL items: load through the backend proxy (strips X-Frame-Options / CSP
+            // frame-ancestors).  Critically, allow-same-origin is NOT set in the sandbox
+            // so that the proxied page's JavaScript runs with a null origin and cannot
+            // access or navigate the parent frame.  Without this, frame-busting scripts
+            // (window.top.location = ...) cause VS Code's webview — and some browsers —
+            // to intercept the navigation and show their own "cannot embed" error page,
+            // bypassing our app entirely.
+            <div className="relative flex flex-col w-full h-full" style={{ minHeight: "70vh" }}>
+              <div className="flex items-center justify-end gap-2 px-3 py-2 border-b border-border bg-muted/40">
+                <span className="text-xs text-muted-foreground">If the page requires login, open it directly in your browser.</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs"
+                  onClick={() => window.open(viewerItem.content, "_blank", "noopener,noreferrer")}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  Open in Browser
+                </Button>
               </div>
-            ) : urlEmbedState === "blocked" ? (
-              <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center" style={{ minHeight: "70vh" }}>
-                <div className="rounded-full bg-muted p-5">
-                  <Globe className="h-12 w-12 text-muted-foreground" />
-                </div>
-                <div className="space-y-3 max-w-sm">
-                  <p className="text-base font-semibold">This resource cannot be embedded</p>
-                  <p className="text-sm text-muted-foreground">
-                    The site requires you to sign in directly in your browser. Open it below to access the content.
-                  </p>
-                  {urlEmbedReason && (
-                    <p className="text-xs text-muted-foreground opacity-60">Reason: {urlEmbedReason}</p>
-                  )}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2">
-                      <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="text-xs break-all text-left select-all">{viewerItem.content}</span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 text-xs w-full"
-                      onClick={() => window.open(viewerItem.content, "_blank", "noopener,noreferrer")}
-                    >
-                      <Globe className="h-3.5 w-3.5" />
-                      Open in Browser
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ) : (
               <iframe
                 key={viewerItem.content}
                 src={proxyUrl(viewerItem.content)}
                 title={viewerItem.title}
-                className="w-full h-full"
-                style={{ minHeight: "70vh" }}
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                className="w-full flex-1"
+                style={{ minHeight: "60vh" }}
+                sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
               />
-            )
+            </div>
           )}
         </div>
       </div>
