@@ -319,7 +319,6 @@ def check_admin_email(email: str) -> CheckEmailResponse:
         logging.exception("check_admin_email failed")
         return CheckEmailResponse(exists=False)
 
-
 def signup_admin(email: str, password: str) -> SignupResponse:
     """Create a new admin account in Firestore (email must not already exist).
 
@@ -350,8 +349,6 @@ def signup_admin(email: str, password: str) -> SignupResponse:
                 return SignupResponse(success=False, error="An account with this email already exists.")
             raise
         return SignupResponse(success=True)
-    except SignupResponse.__class__:  # re-raise our own return values — not possible, safety guard
-        raise
     except Exception as exc:  # noqa: BLE001
         logging.exception("signup_admin failed")
         return SignupResponse(success=False, error="A server error occurred. Try again.")
