@@ -130,6 +130,46 @@ class CourseUpdate(BaseModel):
     hasCertificate: bool | None = Field(default=None)
 
 
+# ─── Categories ───────────────────────────────────────────────────────────────
+
+class CategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class CategoryItem(BaseModel):
+    id: str
+    name: str
+    createdAt: str
+    updatedAt: str
+
+
+class CategoryUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+# ─── Languages ────────────────────────────────────────────────────────────────
+
+_LEVEL_RE = "^(Beginner|Elementary|Intermediate|Upper-Intermediate|Advanced|Fluent|Native)$"
+
+
+class LanguageCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    level: str = Field(default="Beginner", pattern=_LEVEL_RE)
+
+
+class LanguageItem(BaseModel):
+    id: str
+    name: str
+    level: str
+    createdAt: str
+    updatedAt: str
+
+
+class LanguageUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    level: str | None = Field(default=None, pattern=_LEVEL_RE)
+
+
 # ─── Library Items ────────────────────────────────────────────────────────────
 
 class LibraryItemCreate(BaseModel):

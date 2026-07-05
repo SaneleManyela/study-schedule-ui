@@ -29,6 +29,12 @@ from .models import (
     CourseCreate,
     CourseItem,
     CourseUpdate,
+    CategoryCreate,
+    CategoryItem,
+    CategoryUpdate,
+    LanguageCreate,
+    LanguageItem,
+    LanguageUpdate,
     LibraryItemCreate,
     LibraryItemUpdate,
     LibraryItem,
@@ -40,6 +46,8 @@ from .service import (
     verify_admin_password, send_admin_pin, verify_admin_pin,
     check_admin_email, signup_admin,
     list_courses, create_course, update_course, delete_course,
+    list_categories, create_category, update_category, delete_category,
+    list_languages, create_language, update_language, delete_language,
     list_library_items, get_library_item, create_library_item, update_library_item, delete_library_item,
     get_course_note, upsert_course_note,
     validate_session_token,
@@ -239,6 +247,50 @@ def put_course(course_id: str, payload: CourseUpdate, _s: dict = Depends(require
 @app.delete("/api/courses/{course_id}", status_code=204)
 def remove_course(course_id: str, _s: dict = Depends(require_admin)) -> None:
     delete_course(course_id)
+
+
+# ─── Categories ───────────────────────────────────────────────────────────────
+
+@app.get("/api/categories", response_model=list[CategoryItem])
+def get_categories(_s: dict = Depends(require_user)) -> list[CategoryItem]:
+    return list_categories()
+
+
+@app.post("/api/categories", response_model=CategoryItem)
+def post_category(payload: CategoryCreate, _s: dict = Depends(require_admin)) -> CategoryItem:
+    return create_category(payload)
+
+
+@app.put("/api/categories/{category_id}", response_model=CategoryItem)
+def put_category(category_id: str, payload: CategoryUpdate, _s: dict = Depends(require_admin)) -> CategoryItem:
+    return update_category(category_id, payload)
+
+
+@app.delete("/api/categories/{category_id}", status_code=204)
+def remove_category(category_id: str, _s: dict = Depends(require_admin)) -> None:
+    delete_category(category_id)
+
+
+# ─── Languages ────────────────────────────────────────────────────────────────
+
+@app.get("/api/languages", response_model=list[LanguageItem])
+def get_languages(_s: dict = Depends(require_user)) -> list[LanguageItem]:
+    return list_languages()
+
+
+@app.post("/api/languages", response_model=LanguageItem)
+def post_language(payload: LanguageCreate, _s: dict = Depends(require_admin)) -> LanguageItem:
+    return create_language(payload)
+
+
+@app.put("/api/languages/{language_id}", response_model=LanguageItem)
+def put_language(language_id: str, payload: LanguageUpdate, _s: dict = Depends(require_admin)) -> LanguageItem:
+    return update_language(language_id, payload)
+
+
+@app.delete("/api/languages/{language_id}", status_code=204)
+def remove_language(language_id: str, _s: dict = Depends(require_admin)) -> None:
+    delete_language(language_id)
 
 
 # ─── Library ─────────────────────────────────────────────────────────────────

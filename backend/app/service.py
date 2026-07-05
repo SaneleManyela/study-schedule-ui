@@ -245,6 +245,7 @@ def _get_firestore_client() -> firestore.Client:
     if _firestore_client is not None:
         return _firestore_client
 
+    # Only initialize if no default app exists yet (handles hot-reload safely)
     if not firebase_admin._apps:
         project_id = os.getenv("FIREBASE_PROJECT_ID", "").strip()
         service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
@@ -275,7 +276,8 @@ def _get_firestore_client() -> firestore.Client:
             if "already exists" not in str(exc):
                 raise
 
-    _firestore_client = firestore.client()
+    # Reuse the existing app (works both on first init and after hot-reload)
+    _firestore_client = firestore.client(app=firebase_admin.get_app())
     return _firestore_client
 
 
@@ -670,8 +672,144 @@ def delete_course(course_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Library Items
+# Categories
 # ---------------------------------------------------------------------------
+
+# Default seed categories — written to Firestore on first call if the
+# collection is empty so new installs have something to start with.
+_DEFAULT_CATEGORIES = [
+    "Programming",
+    "Design & UI/UX",
+    "Business & Marketing",
+    "Data Science & AI",
+    "Language",
+    "Other",
+]
+
+
+def list_categories() -> list:
+    from .models import CategoryItem
+    cached, hit = _cache.get("categories:all")
+    if hit:
+        return cached
+    client = _get_firestore_client()
+    docs = list(client.collection("categories").order_by("name").stream())
+    if not docs:
+        # Seed defaults on first call
+        now = datetime.now(UTC)
+        batch = client.batch()
+        for name in _DEFAULT_CATEGORIES:
+            ref = client.collection("categories").document()
+            batch.set(ref, {"name": name, "createdAt": now, "updatedAt": now})
+        batch.commit()
+        docs = list(client.collection("categories").order_by("name").stream())
+    items = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        items.append(CategoryItem(
+            id=doc.id,
+            name=str(data.get("name", "")),
+            createdAt=_to_iso(data.get("createdAt")),
+            updatedAt=_to_iso(data.get("updatedAt")),
+        ))
+    _cache.set("categories:all", items, _TTL_STATIC)
+    return items
+
+
+def create_category(payload) -> object:
+    from .models import CategoryItem, CategoryCreate
+    _cache.delete("categories:all")
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    doc_ref = client.collection("categories").document()
+    doc_ref.set({"name": payload.name.strip(), "createdAt": now, "updatedAt": now})
+    return CategoryItem(id=doc_ref.id, name=payload.name.strip(), createdAt=now.isoformat(), updatedAt=now.isoformat())
+
+
+def update_category(category_id: str, payload) -> object:
+    from .models import CategoryItem
+    _cache.delete("categories:all")
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    doc_ref = client.collection("categories").document(category_id)
+    doc_ref.set({"name": payload.name.strip(), "updatedAt": now}, merge=True)
+    data = doc_ref.get().to_dict() or {}
+    return CategoryItem(
+        id=category_id,
+        name=str(data.get("name", "")),
+        createdAt=_to_iso(data.get("createdAt")),
+        updatedAt=_to_iso(data.get("updatedAt")),
+    )
+
+
+def delete_category(category_id: str) -> None:
+    _cache.delete("categories:all")
+    client = _get_firestore_client()
+    client.collection("categories").document(category_id).delete()
+
+
+# ---------------------------------------------------------------------------
+# Languages
+# ---------------------------------------------------------------------------
+
+def list_languages() -> list:
+    from .models import LanguageItem
+    cached, hit = _cache.get("languages:all")
+    if hit:
+        return cached
+    client = _get_firestore_client()
+    docs = list(client.collection("languages").order_by("name").stream())
+    items = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        items.append(LanguageItem(
+            id=doc.id,
+            name=str(data.get("name", "")),
+            level=str(data.get("level", "Beginner")),
+            createdAt=_to_iso(data.get("createdAt")),
+            updatedAt=_to_iso(data.get("updatedAt")),
+        ))
+    _cache.set("languages:all", items, _TTL_STATIC)
+    return items
+
+
+def create_language(payload) -> object:
+    from .models import LanguageItem
+    _cache.delete("languages:all")
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    doc_ref = client.collection("languages").document()
+    doc_ref.set({"name": payload.name.strip(), "level": payload.level, "createdAt": now, "updatedAt": now})
+    return LanguageItem(id=doc_ref.id, name=payload.name.strip(), level=payload.level, createdAt=now.isoformat(), updatedAt=now.isoformat())
+
+
+def update_language(language_id: str, payload) -> object:
+    from .models import LanguageItem
+    _cache.delete("languages:all")
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    doc_ref = client.collection("languages").document(language_id)
+    updates: dict = {"updatedAt": now}
+    if payload.name is not None:
+        updates["name"] = payload.name.strip()
+    if payload.level is not None:
+        updates["level"] = payload.level
+    doc_ref.set(updates, merge=True)
+    data = doc_ref.get().to_dict() or {}
+    return LanguageItem(
+        id=language_id,
+        name=str(data.get("name", "")),
+        level=str(data.get("level", "Beginner")),
+        createdAt=_to_iso(data.get("createdAt")),
+        updatedAt=_to_iso(data.get("updatedAt")),
+    )
+
+
+def delete_language(language_id: str) -> None:
+    _cache.delete("languages:all")
+    client = _get_firestore_client()
+    client.collection("languages").document(language_id).delete()
+
 
 _GDRIVE_ID_RE = re.compile(r"drive\.google\.com/(?:file/d/|uc\?.*id=)([a-zA-Z0-9_-]+)")
 
