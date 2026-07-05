@@ -55,6 +55,8 @@ from .service import (
     _record_failed_sendpin_attempt, _is_sendpin_rate_limited,
 )
 
+logger = logging.getLogger(__name__)
+
 
 # Create the FastAPI app object and expose API metadata visible in docs.
 app = FastAPI(
@@ -164,7 +166,11 @@ def health() -> HealthResponse:
 
 @app.get("/api/schedules", response_model=list[ScheduleItem])
 def get_schedules(_s: dict = Depends(require_user)) -> list[ScheduleItem]:
-    return list_schedules()
+    try:
+        return list_schedules()
+    except Exception as exc:
+        logger.error("Failed to list schedules: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list schedules: {exc}") from exc
 
 
 @app.post("/api/schedules", response_model=ScheduleItem)
@@ -173,137 +179,221 @@ def post_schedule(payload: ScheduleCreate, _s: dict = Depends(require_admin)) ->
         return create_schedule(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Failed to create schedule: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to create schedule: {exc}") from exc
 
 
 @app.get("/api/study-plans", response_model=list[StudyPlanItem])
 def get_study_plans(_s: dict = Depends(require_user)) -> list[StudyPlanItem]:
-    return list_study_plans()
+    try:
+        return list_study_plans()
+    except Exception as exc:
+        logger.error("Failed to list study plans: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list study plans: {exc}") from exc
 
 
 @app.post("/api/study-plans", response_model=StudyPlanItem)
 def post_study_plan(payload: StudyPlanCreate, _s: dict = Depends(require_admin)) -> StudyPlanItem:
-    return create_study_plan(payload)
+    try:
+        return create_study_plan(payload)
+    except Exception as exc:
+        logger.error("Failed to create study plan: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to create study plan: {exc}") from exc
 
 
 @app.post("/api/auth/verify-password", response_model=VerifyPasswordResponse)
 def auth_verify_password(payload: VerifyPasswordRequest) -> VerifyPasswordResponse:
     """Verify admin password against the passwords Firestore collection."""
-    if _is_password_rate_limited(payload.email):
-        return VerifyPasswordResponse(success=False, error="Too many attempts. Please wait 10 minutes.")
-    result = verify_admin_password(payload.password, payload.email)
-    if not result.success:
-        _record_failed_password_attempt(payload.email)
-    return result
+    try:
+        if _is_password_rate_limited(payload.email):
+            return VerifyPasswordResponse(success=False, error="Too many attempts. Please wait 10 minutes.")
+        result = verify_admin_password(payload.password, payload.email)
+        if not result.success:
+            _record_failed_password_attempt(payload.email)
+        return result
+    except Exception as exc:
+        logger.error("Password verification failed for %r: %s", payload.email, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Password verification failed: {exc}") from exc
 
 
 @app.post("/api/auth/check-email", response_model=CheckEmailResponse)
 def auth_check_email(payload: CheckEmailRequest) -> CheckEmailResponse:
     """Check whether an Auth document exists for a given email."""
-
-    return check_admin_email(payload.email)
+    try:
+        return check_admin_email(payload.email)
+    except Exception as exc:
+        logger.error("Check-email failed for %r: %s", payload.email, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Check-email failed: {exc}") from exc
 
 
 @app.post("/api/auth/signup", response_model=SignupResponse)
 def auth_signup(payload: SignupRequest) -> SignupResponse:
     """Create a new admin account if the email is not already registered."""
-
-    return signup_admin(payload.email, payload.password)
+    try:
+        return signup_admin(payload.email, payload.password)
+    except Exception as exc:
+        logger.error("Signup failed for %r: %s", payload.email, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Signup failed: {exc}") from exc
 
 
 @app.post("/api/auth/send-pin", response_model=SendPinResponse)
 def auth_send_pin(payload: SendPinRequest) -> SendPinResponse:
     """Generate and send a 6-digit PIN to the given admin email."""
-    if _is_sendpin_rate_limited(payload.email):
-        return SendPinResponse(success=False, error="Too many PIN requests. Please wait 10 minutes.")
-    result = send_admin_pin(payload.email)
-    if result.success:
-        _record_failed_sendpin_attempt(payload.email)  # counts sends, not failures
-    return result
+    try:
+        if _is_sendpin_rate_limited(payload.email):
+            return SendPinResponse(success=False, error="Too many PIN requests. Please wait 10 minutes.")
+        result = send_admin_pin(payload.email)
+        if result.success:
+            _record_failed_sendpin_attempt(payload.email)  # counts sends, not failures
+        return result
+    except Exception as exc:
+        logger.error("Send-pin failed for %r: %s", payload.email, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Send-pin failed: {exc}") from exc
 
 
 @app.post("/api/auth/verify-pin", response_model=VerifyPinResponse)
 def auth_verify_pin(payload: VerifyPinRequest) -> VerifyPinResponse:
     """Verify the submitted PIN."""
-
-    return verify_admin_pin(payload.pin, payload.email)
+    try:
+        return verify_admin_pin(payload.pin, payload.email)
+    except Exception as exc:
+        logger.error("Verify-pin failed for %r: %s", payload.email, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Verify-pin failed: {exc}") from exc
 
 
 # ─── Courses ────────────────────────────────────────────────────────────────
 
 @app.get("/api/courses", response_model=list[CourseItem])
 def get_courses(_s: dict = Depends(require_user)) -> list[CourseItem]:
-    return list_courses()
+    try:
+        return list_courses()
+    except Exception as exc:
+        logger.error("Failed to list courses: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list courses: {exc}") from exc
 
 
 @app.post("/api/courses", response_model=CourseItem)
 def post_course(payload: CourseCreate, _s: dict = Depends(require_admin)) -> CourseItem:
-    return create_course(payload)
+    try:
+        return create_course(payload)
+    except Exception as exc:
+        logger.error("Failed to create course: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to create course: {exc}") from exc
 
 
 @app.put("/api/courses/{course_id}", response_model=CourseItem)
 def put_course(course_id: str, payload: CourseUpdate, _s: dict = Depends(require_admin)) -> CourseItem:
-    return update_course(course_id, payload)
+    try:
+        return update_course(course_id, payload)
+    except Exception as exc:
+        logger.error("Failed to update course %r: %s", course_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update course: {exc}") from exc
 
 
 @app.delete("/api/courses/{course_id}", status_code=204)
 def remove_course(course_id: str, _s: dict = Depends(require_admin)) -> None:
-    delete_course(course_id)
+    try:
+        delete_course(course_id)
+    except Exception as exc:
+        logger.error("Failed to delete course %r: %s", course_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete course: {exc}") from exc
 
 
 # ─── Categories ───────────────────────────────────────────────────────────────
 
 @app.get("/api/categories", response_model=list[CategoryItem])
 def get_categories(_s: dict = Depends(require_user)) -> list[CategoryItem]:
-    return list_categories()
+    try:
+        return list_categories()
+    except Exception as exc:
+        logger.error("Failed to list categories: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list categories: {exc}") from exc
 
 
 @app.post("/api/categories", response_model=CategoryItem)
 def post_category(payload: CategoryCreate, _s: dict = Depends(require_admin)) -> CategoryItem:
-    return create_category(payload)
+    try:
+        return create_category(payload)
+    except Exception as exc:
+        logger.error("Failed to create category: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to create category: {exc}") from exc
 
 
 @app.put("/api/categories/{category_id}", response_model=CategoryItem)
 def put_category(category_id: str, payload: CategoryUpdate, _s: dict = Depends(require_admin)) -> CategoryItem:
-    return update_category(category_id, payload)
+    try:
+        return update_category(category_id, payload)
+    except Exception as exc:
+        logger.error("Failed to update category %r: %s", category_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update category: {exc}") from exc
 
 
 @app.delete("/api/categories/{category_id}", status_code=204)
 def remove_category(category_id: str, _s: dict = Depends(require_admin)) -> None:
-    delete_category(category_id)
+    try:
+        delete_category(category_id)
+    except Exception as exc:
+        logger.error("Failed to delete category %r: %s", category_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete category: {exc}") from exc
 
 
 # ─── Languages ────────────────────────────────────────────────────────────────
 
 @app.get("/api/languages", response_model=list[LanguageItem])
 def get_languages(_s: dict = Depends(require_user)) -> list[LanguageItem]:
-    return list_languages()
+    try:
+        return list_languages()
+    except Exception as exc:
+        logger.error("Failed to list languages: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list languages: {exc}") from exc
 
 
 @app.post("/api/languages", response_model=LanguageItem)
 def post_language(payload: LanguageCreate, _s: dict = Depends(require_admin)) -> LanguageItem:
-    return create_language(payload)
+    try:
+        return create_language(payload)
+    except Exception as exc:
+        logger.error("Failed to create language: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to create language: {exc}") from exc
 
 
 @app.put("/api/languages/{language_id}", response_model=LanguageItem)
 def put_language(language_id: str, payload: LanguageUpdate, _s: dict = Depends(require_admin)) -> LanguageItem:
-    return update_language(language_id, payload)
+    try:
+        return update_language(language_id, payload)
+    except Exception as exc:
+        logger.error("Failed to update language %r: %s", language_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update language: {exc}") from exc
 
 
 @app.delete("/api/languages/{language_id}", status_code=204)
 def remove_language(language_id: str, _s: dict = Depends(require_admin)) -> None:
-    delete_language(language_id)
+    try:
+        delete_language(language_id)
+    except Exception as exc:
+        logger.error("Failed to delete language %r: %s", language_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete language: {exc}") from exc
 
 
 # ─── Library ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/library", response_model=list[LibraryItem])
 def get_library(_s: dict = Depends(require_user)) -> list[LibraryItem]:
-    return list_library_items()
+    try:
+        return list_library_items()
+    except Exception as exc:
+        logger.error("Failed to list library items: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list library items: {exc}") from exc
 
 
 @app.get("/api/library/{item_id}", response_model=LibraryItem)
 def get_library_item_by_id(item_id: str, _s: dict = Depends(require_user)) -> LibraryItem:
-    item = get_library_item(item_id)
+    try:
+        item = get_library_item(item_id)
+    except Exception as exc:
+        logger.error("Failed to fetch library item %r: %s", item_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch library item: {exc}") from exc
     if item is None:
         raise HTTPException(status_code=404, detail="Library item not found.")
     return item
@@ -311,7 +401,11 @@ def get_library_item_by_id(item_id: str, _s: dict = Depends(require_user)) -> Li
 
 @app.put("/api/library/{item_id}", response_model=LibraryItem)
 def put_library_item(item_id: str, payload: LibraryItemUpdate, _s: dict = Depends(require_admin)) -> LibraryItem:
-    item = update_library_item(item_id, payload)
+    try:
+        item = update_library_item(item_id, payload)
+    except Exception as exc:
+        logger.error("Failed to update library item %r: %s", item_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update library item: {exc}") from exc
     if item is None:
         raise HTTPException(status_code=404, detail="Library item not found.")
     return item
@@ -319,7 +413,6 @@ def put_library_item(item_id: str, payload: LibraryItemUpdate, _s: dict = Depend
 
 @app.post("/api/library", response_model=LibraryItem)
 def post_library_item(payload: LibraryItemCreate, _s: dict = Depends(require_admin)) -> LibraryItem:
-    logger = logging.getLogger(__name__)
     try:
         return create_library_item(payload)
     except ValueError as exc:
@@ -332,12 +425,20 @@ def post_library_item(payload: LibraryItemCreate, _s: dict = Depends(require_adm
 
 @app.delete("/api/library/{item_id}", status_code=204)
 def remove_library_item(item_id: str, _s: dict = Depends(require_admin)) -> None:
-    delete_library_item(item_id)
+    try:
+        delete_library_item(item_id)
+    except Exception as exc:
+        logger.error("Failed to delete library item %r: %s", item_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete library item: {exc}") from exc
 
 
 @app.patch("/api/library/{item_id}", response_model=LibraryItem)
 def patch_library_item(item_id: str, payload: LibraryItemUpdate, _s: dict = Depends(require_admin)) -> LibraryItem:
-    return update_library_item(item_id, payload)
+    try:
+        return update_library_item(item_id, payload)
+    except Exception as exc:
+        logger.error("Failed to patch library item %r: %s", item_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to patch library item: {exc}") from exc
 
 
 # ─── URL Proxy ────────────────────────────────────────────────────────────────
@@ -383,7 +484,6 @@ def proxy_url(
     - Only http/https schemes are permitted.
     - Private, loopback, and link-local addresses are blocked (SSRF protection).
     """
-    logger = logging.getLogger(__name__)
 
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -430,51 +530,63 @@ def proxy_url(
             allow_redirects=True,
         )
     except Exception as exc:
-        logger.error("Proxy fetch failed for %r: %s", url, exc)
+        logger.error("Proxy fetch failed for %r: %s", url, exc, exc_info=True)
         raise HTTPException(status_code=502, detail=f"Failed to fetch URL: {exc}") from exc
 
-    content_type = resp.headers.get("Content-Type", "text/html")
-    body = resp.content
+    try:
+        content_type = resp.headers.get("Content-Type", "text/html")
+        body = resp.content
 
-    # For HTML, inject a <base> tag so relative asset URLs resolve correctly
-    # against the origin site, not our proxy origin.
-    if "text/html" in content_type:
-        html = resp.text
-        base_url = f"{parsed.scheme}://{parsed.netloc}"
-        base_tag = f'<base href="{base_url}/">'
-        if "<base" not in html:
-            if "<head>" in html:
-                html = html.replace("<head>", f"<head>{base_tag}", 1)
-            elif "<HEAD>" in html:
-                html = html.replace("<HEAD>", f"<HEAD>{base_tag}", 1)
-            else:
-                html = base_tag + html
-        body = html.encode("utf-8", errors="replace")
+        # For HTML, inject a <base> tag so relative asset URLs resolve correctly
+        # against the origin site, not our proxy origin.
+        if "text/html" in content_type:
+            html = resp.text
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+            base_tag = f'<base href="{base_url}/">'
+            if "<base" not in html:
+                if "<head>" in html:
+                    html = html.replace("<head>", f"<head>{base_tag}", 1)
+                elif "<HEAD>" in html:
+                    html = html.replace("<HEAD>", f"<HEAD>{base_tag}", 1)
+                else:
+                    html = base_tag + html
+            body = html.encode("utf-8", errors="replace")
 
-    # Build clean response headers, stripping frame-blocking directives.
-    clean_headers: dict[str, str] = {}
-    for key, value in resp.headers.items():
-        key_lower = key.lower()
-        if key_lower in _STRIP_HEADERS:
-            continue
-        if key_lower == "content-security-policy":
-            # Remove only the frame-ancestors directive; keep the rest.
-            value = re.sub(r"frame-ancestors[^;]*;?\s*", "", value, flags=re.IGNORECASE).strip().rstrip(";")
-            if not value:
+        # Build clean response headers, stripping frame-blocking directives.
+        clean_headers: dict[str, str] = {}
+        for key, value in resp.headers.items():
+            key_lower = key.lower()
+            if key_lower in _STRIP_HEADERS:
                 continue
-        clean_headers[key] = value
+            if key_lower == "content-security-policy":
+                # Remove only the frame-ancestors directive; keep the rest.
+                value = re.sub(r"frame-ancestors[^;]*;?\s*", "", value, flags=re.IGNORECASE).strip().rstrip(";")
+                if not value:
+                    continue
+            clean_headers[key] = value
 
-    mime = content_type.split(";")[0].strip()
-    return Response(content=body, media_type=mime, headers=clean_headers)
+        mime = content_type.split(";")[0].strip()
+        return Response(content=body, media_type=mime, headers=clean_headers)
+    except Exception as exc:
+        logger.error("Failed to process proxied response for %r: %s", url, exc, exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Failed to process proxied response: {exc}") from exc
 
 
 # ─── Course Notes ─────────────────────────────────────────────────────────────
 
 @app.get("/api/notes/{course_id}", response_model=CourseNoteItem | None)
 def get_note(course_id: str, _s: dict = Depends(require_user)) -> CourseNoteItem | None:
-    return get_course_note(course_id)
+    try:
+        return get_course_note(course_id)
+    except Exception as exc:
+        logger.error("Failed to get note for course %r: %s", course_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get note: {exc}") from exc
 
 
 @app.put("/api/notes/{course_id}", response_model=CourseNoteItem)
 def put_note(course_id: str, payload: CourseNoteUpsert, _s: dict = Depends(require_user)) -> CourseNoteItem:
-    return upsert_course_note(course_id, payload)
+    try:
+        return upsert_course_note(course_id, payload)
+    except Exception as exc:
+        logger.error("Failed to upsert note for course %r: %s", course_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to upsert note: {exc}") from exc
