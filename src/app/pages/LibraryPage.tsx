@@ -50,8 +50,10 @@ import {
   saveLocal,
   LS_COURSES,
   LS_LIBRARY,
+  LS_LANGUAGES,
   listCourses,
   listLibraryItems,
+  listLanguages,
   getLibraryItem,
   createLibraryItem as apiCreateLibraryItem,
   updateLibraryItem as apiUpdateLibraryItem,
@@ -60,6 +62,7 @@ import {
   type Course,
   type LibraryItem,
   type LibraryItemType,
+  type Language,
 } from "../lib/api";
 import { toast } from "sonner";
 import { cn } from "../components/ui/utils";
@@ -94,8 +97,10 @@ export function LibraryPage() {
   const [uploadType, setUploadType] = useState<LibraryItemType>("pdf");
   const [uploadUrl, setUploadUrl] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadLanguage, setUploadLanguage] = useState("");
   const [uploadLoading, setUploadLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [languages, setLanguages] = useState<Language[]>(() => loadLocal<Language>(LS_LANGUAGES));
 
   // delete confirm
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -118,7 +123,28 @@ export function LibraryPage() {
     listLibraryItems()
       .then((data) => { setItems(data); saveLocal(LS_LIBRARY, data); })
       .catch(() => { setUseRemote(false); });
+    listLanguages()
+      .then((data) => { setLanguages(data); saveLocal(LS_LANGUAGES, data); })
+      .catch(() => {});
   }, []);
+
+  // Reset language selection whenever the course changes
+  // Matches by category (contains "language") OR by course name (e.g. "German Language Studies")
+  const isLanguageCourse = (c?: Course | null) => {
+    if (!c) return false;
+    if (c.category && c.category.toLowerCase().includes("language")) return true;
+    return c.name.toLowerCase().includes("language");
+  };
+
+  useEffect(() => {
+    const course = courses.find((c) => c.id === uploadCourseId);
+    if (isLanguageCourse(course)) {
+      // Pre-select first language if available
+      setUploadLanguage(languages[0]?.name ?? "");
+    } else {
+      setUploadLanguage("");
+    }
+  }, [uploadCourseId, courses, languages]);
 
   const persist = (next: LibraryItem[]) => {
     setItems(next);
@@ -130,6 +156,9 @@ export function LibraryPage() {
     if (!uploadCourseId) { toast.error("Select a course."); return; }
     const course = courses.find((c) => c.id === uploadCourseId);
     if (!course) return;
+    if (isLanguageCourse(course) && !uploadLanguage) {
+      toast.error("Select a language for this course material."); return;
+    }
 
     setUploadLoading(true);
     try {
@@ -161,6 +190,7 @@ export function LibraryPage() {
         title: uploadTitle.trim(),
         type: uploadType,
         content,
+        language: isLanguageCourse(course) && uploadLanguage ? uploadLanguage : null,
       };
       let newItem: LibraryItem;
       if (useRemote) {
@@ -398,6 +428,31 @@ export function LibraryPage() {
               <Label className="font-semibold">Title</Label>
               <Input value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Chapter 1 Notes" className="bg-secondary border-border" />
             </div>
+
+            {/* Language picker — shown when the selected course is in the Language category */}
+            {isLanguageCourse(courses.find((c) => c.id === uploadCourseId)) && (
+              <div className="space-y-1.5">
+                <Label className="font-semibold">
+                  Language of Study <span className="text-red-400">*</span>
+                </Label>
+                <Select
+                  value={uploadLanguage || "__none__"}
+                  onValueChange={(v) => setUploadLanguage(v === "__none__" ? "" : v)}
+                >
+                  <SelectTrigger className="bg-secondary border-border w-full">
+                    <SelectValue placeholder="Select a language…" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border-border">
+                    {languages.length === 0 && (
+                      <SelectItem value="__none__">No languages added yet — go to Categories → Language</SelectItem>
+                    )}
+                    {languages.map((l) => (
+                      <SelectItem key={l.id} value={l.name}>{l.name} ({l.level})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Type */}
             <div className="space-y-1.5">

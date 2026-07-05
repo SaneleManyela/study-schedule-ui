@@ -44,8 +44,8 @@ export function StudyCalendarPage() {
   const [newStart, setNewStart] = useState("09:00");
   const [newEnd, setNewEnd] = useState("10:00");
 
-  const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 }); // Monday
-  const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i)); // Mon–Fri
+  const weekStart = startOfWeek(currentWeek, { weekStartsOn: 0 }); // Sunday
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)); // Sun–Sat
 
   const persist = (next: ScheduleItem[]) => {
     setSchedules(next);
@@ -173,7 +173,7 @@ export function StudyCalendarPage() {
         </div>
 
         {/* Day headers */}
-        <div className="grid border-b border-border" style={{ gridTemplateColumns: "56px repeat(5, 1fr)" }}>
+        <div className="grid border-b border-border" style={{ gridTemplateColumns: "56px repeat(7, 1fr)" }}>
           <div className="border-r border-border" />
           {weekDays.map((day) => (
             <div
@@ -208,7 +208,7 @@ export function StudyCalendarPage() {
               <div
                 key={hour}
                 className="grid border-b border-border/50"
-                style={{ gridTemplateColumns: "56px repeat(5, 1fr)", height: 56 }}
+                style={{ gridTemplateColumns: "56px repeat(7, 1fr)", height: 56 }}
               >
                 <div className="text-[11px] text-muted-foreground pt-1 pr-2 text-right border-r border-border/50">
                   {format(new Date(2000, 0, 1, hour), "h a")}

@@ -330,6 +330,7 @@ export interface LibraryItem {
   type: LibraryItemType;
   /** base64 data URI for PDFs, plain URL for links */
   content: string;
+  language?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -340,6 +341,7 @@ export interface CreateLibraryItemPayload {
   title: string;
   type: LibraryItemType;
   content: string;
+  language?: string | null;
 }
 
 export interface UpdateLibraryItemPayload {
@@ -348,6 +350,7 @@ export interface UpdateLibraryItemPayload {
   title?: string;
   type?: LibraryItemType;
   content?: string;
+  language?: string | null;
 }
 
 export function listLibraryItems(): Promise<LibraryItem[]> {
@@ -363,14 +366,6 @@ export function createLibraryItem(payload: CreateLibraryItemPayload): Promise<Li
     method: "POST",
     body: JSON.stringify(payload),
   });
-}
-
-export interface UpdateLibraryItemPayload {
-  courseId?: string;
-  courseName?: string;
-  title?: string;
-  type?: LibraryItemType;
-  content?: string;
 }
 
 export function updateLibraryItem(id: string, payload: UpdateLibraryItemPayload): Promise<LibraryItem> {

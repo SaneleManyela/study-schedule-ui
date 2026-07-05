@@ -855,6 +855,7 @@ def list_library_items() -> list[LibraryItem]:
             title=str(data.get("title", "")),
             type=item_type,
             content=content_preview,
+            language=str(data.get("language")) if data.get("language") else None,
             createdAt=_to_iso(data.get("createdAt")),
             updatedAt=_to_iso(data.get("updatedAt")),
         ))
@@ -880,6 +881,7 @@ def get_library_item(item_id: str) -> LibraryItem | None:
         title=str(data.get("title", "")),
         type=str(data.get("type", "pdf")),
         content=str(data.get("content", "")),
+        language=str(data.get("language")) if data.get("language") else None,
         createdAt=_to_iso(data.get("createdAt")),
         updatedAt=_to_iso(data.get("updatedAt")),
     )
@@ -911,6 +913,7 @@ def create_library_item(payload: LibraryItemCreate) -> LibraryItem:
         "title": payload.title.strip(),
         "type": stored_type,
         "content": content,
+        "language": payload.language.strip() if payload.language else None,
         "createdAt": now,
         "updatedAt": now,
     })
@@ -921,6 +924,7 @@ def create_library_item(payload: LibraryItemCreate) -> LibraryItem:
         title=payload.title.strip(),
         type=stored_type,
         content=content,
+        language=payload.language.strip() if payload.language else None,
         createdAt=now.isoformat(),
         updatedAt=now.isoformat(),
     )
@@ -948,6 +952,8 @@ def update_library_item(item_id: str, payload: LibraryItemUpdate) -> LibraryItem
         updates["type"] = payload.type
     if payload.content is not None:
         updates["content"] = payload.content
+    if payload.language is not None:
+        updates["language"] = payload.language.strip() if payload.language else None
     doc_ref.set(updates, merge=True)
     data = doc_ref.get().to_dict() or {}
     item = LibraryItem(
@@ -957,6 +963,7 @@ def update_library_item(item_id: str, payload: LibraryItemUpdate) -> LibraryItem
         title=str(data.get("title", "")),
         type=str(data.get("type", "pdf")),
         content=str(data.get("content", "")),
+        language=str(data.get("language")) if data.get("language") else None,
         createdAt=_to_iso(data.get("createdAt")),
         updatedAt=_to_iso(data.get("updatedAt")),
     )

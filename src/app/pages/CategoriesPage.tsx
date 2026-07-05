@@ -207,7 +207,11 @@ export function CategoriesPage() {
               return (
                 <button
                   key={cat.id}
-                  onClick={() => navigate(`/admin/courses?category=${encodeURIComponent(cat.name)}`)}
+                  onClick={() =>
+                    cat.name === "Language"
+                      ? navigate("/admin/languages")
+                      : navigate(`/admin/categories/${encodeURIComponent(cat.name)}`)
+                  }
                   className="flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-4 hover:bg-secondary transition-colors text-left"
                 >
                   <div className="flex items-center gap-2">
@@ -250,6 +254,11 @@ export function CategoriesPage() {
                     key={cat.id}
                     selected={cat.id === selectedId}
                     onClick={() => setSelectedId(cat.id)}
+                    onDoubleClick={() =>
+                      cat.name === "Language"
+                        ? navigate("/admin/languages")
+                        : navigate(`/admin/categories/${encodeURIComponent(cat.name)}`)
+                    }
                     sx={{
                       cursor: "pointer",
                       background: cat.id === selectedId ? "rgba(65,105,225,0.12)" : "transparent",

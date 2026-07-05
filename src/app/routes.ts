@@ -9,6 +9,7 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { CourseDetailPage } from "./pages/CourseDetailPage";
 import { CourseNotesPage } from "./pages/CourseNotesPage";
 import { CategoriesPage } from "./pages/CategoriesPage";
+import { CategoryDetailPage } from "./pages/CategoryDetailPage";
 import { LanguagesPage } from "./pages/LanguagesPage";
 
 function getSession() {
@@ -54,6 +55,7 @@ export const router = createBrowserRouter(
         { path: "study-plan", Component: StudyPlanPage },
         { path: "library", Component: LibraryPage },
         { path: "categories", Component: CategoriesPage },
+        { path: "categories/:categoryName", Component: CategoryDetailPage },
         { path: "languages", Component: LanguagesPage },
         // ── user role only: notes belong to users, not admins ──────────────
         { path: "courses/:id/notes", loader: requireAuth, Component: CourseNotesPage },

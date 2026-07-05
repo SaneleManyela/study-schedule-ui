@@ -178,6 +178,7 @@ class LibraryItemCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     type: str = Field(..., pattern="^(pdf|url|gdrive)$")
     content: str = Field(..., min_length=1)  # base64 data URI for PDFs, plain URL for links, embed URL for gdrive
+    language: str | None = Field(default=None, max_length=100)  # set when course category is Language
 
 class LibraryItemUpdate(BaseModel):
     """Partial update for a library item. Omit fields to leave them unchanged.
@@ -187,6 +188,7 @@ class LibraryItemUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     type: str | None = Field(default=None, pattern="^(pdf|url|gdrive)$")
     content: str | None = Field(default=None, min_length=1)
+    language: str | None = Field(default=None, max_length=100)
 
 
 class LibraryItem(LibraryItemCreate):

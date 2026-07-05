@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronRight,
   Tag,
-  Languages,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { cn } from "../components/ui/utils";
@@ -24,7 +23,6 @@ const NAV_ITEMS = [
   { label: "Dashboard", to: "/admin", icon: LayoutDashboard, end: true },
   { label: "Course Overview", to: "/admin/courses", icon: BookOpen, end: false },
   { label: "Categories", to: "/admin/categories", icon: Tag, end: false },
-  { label: "Languages", to: "/admin/languages", icon: Languages, end: false },
   { label: "Study Calendar", to: "/admin/calendar", icon: CalendarDays, end: false },
   { label: "Study Plan", to: "/admin/study-plan", icon: ClipboardList, end: false },
   { label: "Library", to: "/admin/library", icon: Library, end: false },
