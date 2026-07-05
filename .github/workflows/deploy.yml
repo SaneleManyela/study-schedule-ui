@@ -41,7 +41,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          #cache: npm
 
       - name: Install dependencies
         run: npm install
@@ -60,13 +59,13 @@ jobs:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: npm run build
 
-       - name: Verify env var landed in build
+      - name: Verify env var landed in build
         run: |
-          if grep -rq "onrender" dist/assets/*.js; then
-            echo "FOUND onrender reference in build output"
-          else
-            echo "MISSING onrender reference NOT in build output"
-          fi
+        if grep -rq "onrender" dist/assets/*.js; then
+          echo "FOUND onrender reference in build output"
+        else
+          echo "MISSING onrender reference NOT in build output"
+        fi
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
