@@ -6,52 +6,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Backend → Google Cloud Run ──────────────────────────────────────────────
+  # ── Backend → Render.com ───────────────────────────────────────────────────────
   deploy-backend:
-    name: Build & deploy backend (Cloud Run)
+    name: Deploy backend (Render.com)
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write   # needed for Workload Identity Federation
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev --quiet
-
-      - name: Build and push image
-        working-directory: backend
+      - name: Trigger Render Deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
-          IMAGE="${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/study-planner/api:${{ github.sha }}"
-          docker build -t "$IMAGE" .
-          docker push "$IMAGE"
-          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
-
-      - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy study-planner-api \
-            --image "$IMAGE" \
-            --region "${{ secrets.GCP_REGION }}" \
-            --platform managed \
-            --allow-unauthenticated \
-            --min-instances 0 \
-            --max-instances 2 \
-            --memory 512Mi \
-            --cpu 1 \
-            --timeout 60 \
-            --set-secrets "FIREBASE_SERVICE_ACCOUNT_JSON=firebase-service-account:latest,SESSION_SECRET=session-secret:latest,SMTP_USER=smtp-user:latest,SMTP_PASSWORD=smtp-password:latest,RESEND_API_KEY=resend-api-key:latest" \
-            --set-env-vars "FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
-            --quiet
+          # Trigger a new deploy on Render
+          curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{}'
 
   # ── Frontend → GitHub Pages ─────────────────────────────────────────────────
   deploy-frontend:
@@ -83,4 +57,3 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-
