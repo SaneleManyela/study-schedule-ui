@@ -190,3 +190,5 @@ Base URL in development: `http://127.0.0.1:8000` (proxied through Vite as `/api/
 | GET/PUT | `/api/notes/{course_id}` | Any |
 | GET | `/api/proxy` | None (public proxy) |
 | POST | `/api/auth/*` | None (auth endpoints) |
+
+
