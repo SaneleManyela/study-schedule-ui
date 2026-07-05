@@ -53,8 +53,27 @@ npm run dev
 - `GET /api/study-plans`
 - `POST /api/study-plans`
 
-## 5. Troubleshooting
+## 5. Deployment
+
+### Production Deployment
+
+The application is deployed using:
+
+- **Frontend:** GitHub Pages (https://SaneleManyela.github.io/study-schedule-ui)
+- **Backend:** Render.com (https://study-planner-api.onrender.com)
+
+To deploy:
+
+1. Set up the backend on Render.com using the `backend/render.yaml` blueprint
+2. Add your Firebase service account JSON and other secrets in Render dashboard
+3. Get the Render service URL and set it as `VITE_API_BASE_URL`
+4. Run `npm run deploy` to deploy the frontend
+
+See `DEPLOYMENT.md` for full deployment instructions.
+
+## 6. Troubleshooting
 
 - If backend fails on Firestore calls, verify Firebase credentials are available in environment variables.
 - If frontend cannot call backend, verify `VITE_API_BASE_URL` or default backend URL `http://127.0.0.1:8000`.
 - If data is missing, ensure Firestore database exists and service account has read/write permission.
+- If you see CORS errors, ensure the backend allows requests from your frontend origin.
