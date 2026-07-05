@@ -54,3 +54,4 @@ desktop.ini
 *.ntvs*
 *.njsproj
 *.sln
+.venv/
