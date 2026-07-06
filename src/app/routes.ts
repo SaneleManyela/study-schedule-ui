@@ -1,4 +1,4 @@
-import { createBrowserRouter, redirect } from "react-router";
+import { createHashRouter, redirect } from "react-router";
 import { LoginPage } from "./pages/LoginPage";
 import { AdminLayout } from "./pages/AdminLayout";
 import { DashboardHome } from "./pages/DashboardHome";
@@ -32,7 +32,7 @@ function requireAdmin() {
   return null;
 }
 
-export const router = createBrowserRouter(
+export const router = createHashRouter(
   [
     {
       path: "/",
@@ -66,5 +66,4 @@ export const router = createBrowserRouter(
       loader: () => redirect("/login"),
     },
   ],
-  { basename: import.meta.env.BASE_URL },
 );
