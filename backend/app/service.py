@@ -251,8 +251,9 @@ def _get_firestore_client() -> firestore.Client:
         service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
         service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
 
-# Build service account from individual env vars if full JSON not provided
+        # Build service account from individual env vars if full JSON not provided or incomplete
         if not service_account_json and not service_account_path:
+            # Try to build from individual env vars
             client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
             private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
             private_key_id = os.getenv("FIREBASE_PRIVATE_KEY_ID", "").strip()
@@ -271,6 +272,33 @@ def _get_firestore_client() -> firestore.Client:
                     "private_key": private_key,
                     "token_uri": "https://oauth2.googleapis.com/token",
                 })
+        elif service_account_json:
+            # Validate that the provided JSON has all required fields
+            try:
+                parsed_json = json.loads(service_account_json)
+                required_fields = ["type", "project_id", "private_key_id", "private_key", "client_email", "token_uri"]
+                missing = [f for f in required_fields if f not in parsed_json]
+                if missing:
+                    # Fall back to individual env vars if JSON is incomplete
+                    service_account_json = ""
+                    client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
+                    private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
+                    private_key_id = os.getenv("FIREBASE_PRIVATE_KEY_ID", "").strip()
+                    client_id = os.getenv("FIREBASE_CLIENT_ID", "").strip()
+                    
+                    if client_email and private_key and project_id:
+                        private_key = private_key.replace("\\n", "\n")
+                        service_account_json = json.dumps({
+                            "type": "service_account",
+                            "project_id": project_id,
+                            "private_key_id": private_key_id,
+                            "client_email": client_email,
+                            "client_id": client_id,
+                            "private_key": private_key,
+                            "token_uri": "https://oauth2.googleapis.com/token",
+                        })
+            except json.JSONDecodeError:
+                service_account_json = ""
 
         try:
             if service_account_json:
