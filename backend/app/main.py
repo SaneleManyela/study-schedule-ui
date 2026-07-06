@@ -107,6 +107,7 @@ app.add_middleware(
 # Paths that do not require a session token.
 _AUTH_EXEMPT = frozenset([
     "/api/health",
+    "/api/debug/firebase",
     "/api/auth/check-email",
     "/api/auth/verify-password",
     "/api/auth/send-pin",
