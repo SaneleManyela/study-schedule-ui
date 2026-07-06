@@ -251,7 +251,7 @@ def _get_firestore_client() -> firestore.Client:
         service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
         service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
 
-        # Build service account from individual env vars if full JSON not provided
+# Build service account from individual env vars if full JSON not provided
         if not service_account_json and not service_account_path:
             client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
             private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
@@ -269,6 +269,7 @@ def _get_firestore_client() -> firestore.Client:
                     "client_email": client_email,
                     "client_id": client_id,
                     "private_key": private_key,
+                    "token_uri": "https://oauth2.googleapis.com/token",
                 })
 
         try:
