@@ -64,6 +64,7 @@ class CheckEmailRequest(BaseModel):
 
 class CheckEmailResponse(BaseModel):
     exists: bool
+    error: str | None = None
 
 
 class SignupRequest(BaseModel):

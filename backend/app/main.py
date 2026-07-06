@@ -2,6 +2,7 @@
 
 import ipaddress
 import logging
+import os
 import re
 import urllib.parse
 
@@ -162,6 +163,33 @@ def health() -> HealthResponse:
 
     # Keep this endpoint deterministic and side-effect free.
     return HealthResponse(status="ok", mode="study-planner")
+
+
+@app.get("/api/debug/firebase")
+def debug_firebase() -> dict:
+    """Debug endpoint to check Firebase initialization status."""
+    import firebase_admin
+    from .service import _get_firestore_client
+    
+    result = {
+        "firebase_apps": len(firebase_admin._apps),
+        "project_id": os.getenv("FIREBASE_PROJECT_ID", ""),
+        "has_service_account_json": bool(os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()),
+        "has_client_email": bool(os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()),
+        "has_private_key": bool(os.getenv("FIREBASE_PRIVATE_KEY", "").strip()),
+    }
+    
+    try:
+        client = _get_firestore_client()
+        # Try to list collections to verify connection
+        collections = list(client.collections())
+        result["firestore_connected"] = True
+        result["collections_count"] = len(collections)
+    except Exception as exc:
+        result["firestore_connected"] = False
+        result["firestore_error"] = str(exc)
+    
+    return result
 
 
 @app.get("/api/schedules", response_model=list[ScheduleItem])

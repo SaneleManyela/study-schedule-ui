@@ -19,7 +19,7 @@ export function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // ── Step 1: check email ──────────────────────────────────────────────────
+// ── Step 1: check email ──────────────────────────────────────────────────
   const handleEmailContinue = async () => {
     setError("");
     const trimmed = email.trim().toLowerCase();
@@ -28,9 +28,13 @@ export function LoginPage() {
 
     setIsLoading(true);
     try {
-      const { exists } = await checkAdminEmail(trimmed);
+      const result = await checkAdminEmail(trimmed);
       setEmail(trimmed);
-      setStep(exists ? "login" : "signup");
+      if (result.error) {
+        setError(`Server error: ${result.error}`);
+      } else {
+        setStep(result.exists ? "login" : "signup");
+      }
     } catch {
       setError("Could not reach the server. Please try again.");
     } finally {

@@ -335,9 +335,13 @@ def check_admin_email(email: str) -> CheckEmailResponse:
     try:
         doc = _get_admin_doc(email)
         return CheckEmailResponse(exists=doc is not None)
-    except Exception:  # noqa: BLE001
-        logging.exception("check_admin_email failed")
-        return CheckEmailResponse(exists=False)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("check_admin_email failed: %s", exc)
+        # Return the error message for debugging (remove in production if needed)
+        return CheckEmailResponse(exists=False, error=str(exc) if str(exc) else "Unknown error")
+
+# Add error field to CheckEmailResponse model
+# Note: This requires updating models.py as well
 
 def signup_admin(email: str, password: str) -> SignupResponse:
     """Create a new admin account in Firestore (email must not already exist).

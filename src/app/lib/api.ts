@@ -163,8 +163,8 @@ export function verifyAdminPassword(email: string, password: string): Promise<Au
   });
 }
 
-export function checkAdminEmail(email: string): Promise<{ exists: boolean }> {
-  return requestJson<{ exists: boolean }>("/api/auth/check-email", {
+export function checkAdminEmail(email: string): Promise<{ exists: boolean; error?: string | null }> {
+  return requestJson<{ exists: boolean; error?: string | null }>("/api/auth/check-email", {
     method: "POST",
     body: JSON.stringify({ email }),
   });
