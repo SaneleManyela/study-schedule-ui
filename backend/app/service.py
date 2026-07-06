@@ -442,6 +442,8 @@ def send_admin_pin(email: str) -> SendPinResponse:
             import urllib.request
             import urllib.error
             import json as _json
+            # Debug: log the key being used (first 10 chars only)
+            logging.info(f"RESEND_API_KEY length: {len(resend_key)}, starts with: {resend_key[:10] if resend_key else 'EMPTY'}")
             payload = _json.dumps({
                 "from": "onboarding@resend.dev",
                 "to": [email],
