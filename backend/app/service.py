@@ -440,6 +440,7 @@ def send_admin_pin(email: str) -> SendPinResponse:
         elif resend_key:
             # ── Resend API (fallback) ───────────────────────────────────────
             import urllib.request
+            import urllib.error
             import json as _json
             payload = _json.dumps({
                 "from": "Study Planner <onboarding@resend.dev>",
@@ -456,9 +457,14 @@ def send_admin_pin(email: str) -> SendPinResponse:
                 },
                 method="POST",
             )
-            with urllib.request.urlopen(req) as resp:
-                if resp.status not in (200, 201):
-                    raise RuntimeError(f"Resend returned HTTP {resp.status}")
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    if resp.status not in (200, 201):
+                        error_body = resp.read().decode()
+                        raise RuntimeError(f"Resend returned HTTP {resp.status}: {error_body}")
+            except urllib.error.HTTPError as http_err:
+                error_body = http_err.read().decode()
+                raise RuntimeError(f"Resend API error: {error_body}")
         else:
             # Dev fallback: print PIN to backend console
             print(f"[DEV] Admin PIN for {email}: {pin}")
