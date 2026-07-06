@@ -472,7 +472,7 @@ def send_admin_pin(email: str) -> SendPinResponse:
         return SendPinResponse(success=True)
     except Exception as exc:  # noqa: BLE001
         logging.exception("send_admin_pin failed")
-        return SendPinResponse(success=False, error="A server error occurred. Try again.")
+        return SendPinResponse(success=False, error=f"Server error: {exc}")
 
 
 def verify_admin_pin(pin: str, email: str) -> VerifyPinResponse:
