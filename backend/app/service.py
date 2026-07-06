@@ -443,7 +443,7 @@ def send_admin_pin(email: str) -> SendPinResponse:
             import urllib.error
             import json as _json
             payload = _json.dumps({
-                "from": "Study Planner <onboarding@resend.dev>",
+                "from": "onboarding@resend.dev",
                 "to": [email],
                 "subject": "Study Planner Admin PIN",
                 "text": f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.",
