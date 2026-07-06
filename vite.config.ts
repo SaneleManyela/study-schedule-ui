@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: "/",
+  base: process.env.NODE_ENV === "production" ? "/study-schedule-ui/" : "/",
   server: {
     proxy: {
       "/api": {
