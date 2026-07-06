@@ -177,6 +177,9 @@ def debug_firebase() -> dict:
         "has_service_account_json": bool(os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()),
         "has_client_email": bool(os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()),
         "has_private_key": bool(os.getenv("FIREBASE_PRIVATE_KEY", "").strip()),
+        "has_resend_api_key": bool(os.getenv("RESEND_API_KEY", "").strip()),
+        "has_smtp_user": bool(os.getenv("SMTP_USER", "").strip()),
+        "has_smtp_password": bool(os.getenv("SMTP_PASSWORD", "").strip()),
     }
     
     try:
