@@ -58,7 +58,6 @@ from .service import (
 
 logger = logging.getLogger(__name__)
 
-
 # Create the FastAPI app object and expose API metadata visible in docs.
 app = FastAPI(
     title="Study Planner API",
