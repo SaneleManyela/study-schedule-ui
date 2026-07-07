@@ -13,6 +13,17 @@ from datetime import UTC, datetime
 from typing import Any
 from pathlib import Path
 
+# ── GLOBAL SOCKET MONKEY-PATCH FOR RENDER NETWORKING ────────────────────────
+# This must be executed at module load time to force Python's network engine
+# to exclusively resolve and connect over IPv4 (AF_INET), completely bypassing
+# Render's unreachable IPv6 interfaces for SMTP, Firestore, and Resend.
+import socket
+_orig_getaddrinfo = socket.getaddrinfo
+def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+socket.getaddrinfo = _ipv4_only_getaddrinfo
+# ───────────────────────────────────────────────────────────────────────────
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -22,7 +33,6 @@ import math
 import re
 import requests
 import smtplib
-import socket
 import string
 from email.mime.text import MIMEText
 
@@ -370,25 +380,15 @@ def check_admin_email(email: str) -> CheckEmailResponse:
         # Return the error message for debugging (remove in production if needed)
         return CheckEmailResponse(exists=False, error=str(exc) if str(exc) else "Unknown error")
 
-# Add error field to CheckEmailResponse model
-# Note: This requires updating models.py as well
 
 def signup_admin(email: str, password: str) -> SignupResponse:
-    """Create a new admin account in Firestore (email must not already exist).
-
-    Uses the normalised email as the document ID so the exists-check and the
-    write are effectively atomic: a second concurrent signup for the same
-    email will hit Firestore's document-level conflict and raise, which we
-    surface as a duplicate-email error.
-    """
+    """Create a new admin account in Firestore (email must not already exist)."""
     import hashlib as _hashlib
     try:
-        # Derive a stable, URL-safe document ID from the email.
         doc_id = _hashlib.sha256(email.strip().lower().encode()).hexdigest()
         client = _get_firestore_client()
         doc_ref = client.collection("Auth").document(doc_id)
         now = datetime.now(UTC)
-        # create() raises google.cloud.exceptions.Conflict (409) if doc already exists.
         try:
             doc_ref.create({
                 "email": email.strip().lower(),
@@ -410,84 +410,71 @@ def signup_admin(email: str, password: str) -> SignupResponse:
 
 def send_admin_pin(email: str) -> SendPinResponse:
     """Generate a 6-digit PIN, store it in Firestore, and e-mail it via SMTP (or Resend fallback)."""
-    # ── Global Socket Monkey-Patch for Render Network Environments ───────────
-    # Intercepts standard library socket lookups and forces IPv4 (AF_INET) resolution
-    orig_getaddrinfo = socket.getaddrinfo
-    def ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        return orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
-    socket.getaddrinfo = ipv4_only_getaddrinfo
-
     try:
-        doc = _get_admin_doc(email)[cite: 2]
-        if doc is None:[cite: 2]
-            return SendPinResponse(success=False, error="Admin config not found")[cite: 2]
-        if not email:[cite: 2]
-            return SendPinResponse(success=False, error="No email provided")[cite: 2]
+        doc = _get_admin_doc(email)
+        if doc is None:
+            return SendPinResponse(success=False, error="Admin config not found")
+        if not email:
+            return SendPinResponse(success=False, error="No email provided")
 
-        pin = "".join(secrets.choice(string.digits) for _ in range(6))[cite: 2]
-        # Store PIN with 10-minute expiry
-        expires_dt = datetime.now(UTC).timestamp() + 600[cite: 2]
-        doc.reference.set([cite: 2]
-            {"pin": pin, "pinExpiresAt": datetime.fromtimestamp(expires_dt, UTC).isoformat(), "updatedAt": datetime.now(UTC).isoformat()},[cite: 2]
-            merge=True,[cite: 2]
+        pin = "".join(secrets.choice(string.digits) for _ in range(6))
+        expires_dt = datetime.now(UTC).timestamp() + 600
+        doc.reference.set(
+            {"pin": pin, "pinExpiresAt": datetime.fromtimestamp(expires_dt, UTC).isoformat(), "updatedAt": datetime.now(UTC).isoformat()},
+            merge=True,
         )
 
-        resend_key = os.getenv("RESEND_API_KEY", "").strip()[cite: 2]
-        smtp_user = os.getenv("SMTP_USER", "").strip()[cite: 2]
-        smtp_pass = os.getenv("SMTP_PASSWORD", "").strip()[cite: 2]
-        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()[cite: 2]
-        smtp_port = int(os.getenv("SMTP_PORT", "465").strip())[cite: 2]
+        resend_key = os.getenv("RESEND_API_KEY", "").strip()
+        smtp_user = os.getenv("SMTP_USER", "").strip()
+        smtp_pass = os.getenv("SMTP_PASSWORD", "").strip()
+        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
+        smtp_port = int(os.getenv("SMTP_PORT", "465").strip())
 
-        if smtp_user and smtp_pass:[cite: 2]
+        if smtp_user and smtp_pass:
             # ── Configurable SMTP (primary) ───────────────────────────────────
-            msg = MIMEText(f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.")[cite: 2]
-            msg["Subject"] = "Study Planner Admin PIN"[cite: 2]
-            msg["From"] = smtp_user[cite: 2]
-            msg["To"] = email[cite: 2]
-            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:[cite: 2]
-                server.login(smtp_user, smtp_pass)[cite: 2]
-                server.sendmail(smtp_user, [email], msg.as_string())[cite: 2]
-        elif resend_key:[cite: 2]
+            msg = MIMEText(f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.")
+            msg["Subject"] = "Study Planner Admin PIN"
+            msg["From"] = smtp_user
+            msg["To"] = email
+            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_user, [email], msg.as_string())
+        elif resend_key:
             # ── Resend API (fallback) ───────────────────────────────────────
             import urllib.request
             import urllib.error
             import json as _json
-            # Debug: log the key being used (first 10 chars only)
-            logging.info(f"RESEND_API_KEY length: {len(resend_key)}, starts with: {resend_key[:10] if resend_key else 'EMPTY'}")[cite: 2]
+            logging.info(f"RESEND_API_KEY length: {len(resend_key)}, starts with: {resend_key[:10] if resend_key else 'EMPTY'}")
             payload = _json.dumps({
                 "from": "onboarding@resend.dev",
                 "to": [email],
                 "subject": "Study Planner Admin PIN",
                 "text": f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.",
-            }).encode()[cite: 2]
-            req = urllib.request.Request([cite: 2]
-                "https://api-us.resend.com/emails",  # Forces IPv4 compatible endpoint[cite: 2]
-                data=payload,[cite: 2]
+            }).encode()
+            req = urllib.request.Request(
+                "https://api-us.resend.com/emails",  # Forces IPv4 compatible endpoint
+                data=payload,
                 headers={
                     "Authorization": f"Bearer {resend_key}",
                     "Content-Type": "application/json",
                 },
-                method="POST",[cite: 2]
+                method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=10) as resp:[cite: 2]
-                    if resp.status not in (200, 201):[cite: 2]
-                        error_body = resp.read().decode()[cite: 2]
-                        raise RuntimeError(f"Resend returned HTTP {resp.status}: {error_body}")[cite: 2]
-            except urllib.error.HTTPError as http_err:[cite: 2]
-                error_body = http_err.read().decode()[cite: 2]
-                raise RuntimeError(f"Resend API error: {error_body}")[cite: 2]
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    if resp.status not in (200, 201):
+                        error_body = resp.read().decode()
+                        raise RuntimeError(f"Resend returned HTTP {resp.status}: {error_body}")
+            except urllib.error.HTTPError as http_err:
+                error_body = http_err.read().decode()
+                raise RuntimeError(f"Resend API error: {error_body}")
         else:
-            # Dev fallback: print PIN to backend console
-            print(f"[DEV] Admin PIN for {email}: {pin}")[cite: 2]
+            print(f"[DEV] Admin PIN for {email}: {pin}")
 
-        return SendPinResponse(success=True)[cite: 2]
-    except Exception as exc:  # noqa: BLE001[cite: 2]
-        logging.exception("send_admin_pin failed")[cite: 2]
-        return SendPinResponse(success=False, error=f"Server error: {exc}")[cite: 2]
-    finally:
-        # Restore the original address resolution logic to protect other library instances
-        socket.getaddrinfo = orig_getaddrinfo
+        return SendPinResponse(success=True)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("send_admin_pin failed")
+        return SendPinResponse(success=False, error=f"Server error: {exc}")
 
 
 def verify_admin_pin(pin: str, email: str) -> VerifyPinResponse:
@@ -509,10 +496,9 @@ def verify_admin_pin(pin: str, email: str) -> VerifyPinResponse:
         if not secrets.compare_digest(pin, stored_pin):
             _record_failed_pin(email)
             return VerifyPinResponse(success=False, error="Incorrect PIN")
-        # Success — clear rate-limit, invalidate PIN, issue session token
         _clear_pin_attempts(email)
         doc.reference.set({"pin": None, "pinExpiresAt": None}, merge=True)
-        role = data.get("role") or "admin"  # default admin for legacy accounts without a role field
+        role = data.get("role") or "admin"
         token = _generate_session_token(email, role)
         return VerifyPinResponse(success=True, token=token, role=role)
     except Exception as exc:  # noqa: BLE001
@@ -639,7 +625,6 @@ def create_study_plan(payload: StudyPlanCreate) -> StudyPlanItem:
         }
     )
     _cache.delete("study_plans:all")
-    _cache.delete("study_plans:all")
     data = doc_ref.get().to_dict() or {}
     return StudyPlanItem(
         id=doc_ref.id,
@@ -746,8 +731,6 @@ def delete_course(course_id: str) -> None:
 # Categories
 # ---------------------------------------------------------------------------
 
-# Default seed categories — written to Firestore on first call if the
-# collection is empty so new installs have something to start with.
 _DEFAULT_CATEGORIES = [
     "Programming",
     "Design & UI/UX",
@@ -766,7 +749,6 @@ def list_categories() -> list:
     client = _get_firestore_client()
     docs = list(client.collection("categories").order_by("name").stream())
     if not docs:
-        # Seed defaults on first call
         now = datetime.now(UTC)
         batch = client.batch()
         for name in _DEFAULT_CATEGORIES:
@@ -788,7 +770,7 @@ def list_categories() -> list:
 
 
 def create_category(payload) -> object:
-    from .models import CategoryItem, CategoryCreate
+    from .models import CategoryItem
     _cache.delete("categories:all")
     client = _get_firestore_client()
     now = datetime.now(UTC)
@@ -886,27 +868,14 @@ _GDRIVE_ID_RE = re.compile(r"drive\.google\.com/(?:file/d/|uc\?.*id=)([a-zA-Z0-9
 
 
 def _get_gdrive_embed_url(share_url: str) -> str:
-    """Convert a Google Drive share URL to an embeddable preview URL.
-
-    Google Drive's /preview URL supports iframe embedding without authentication
-    for publicly shared files.  The old uc?export=download endpoint is
-    blocked for programmatic access and returns 403.
-
-    Raises ValueError if the URL is not a recognised Drive link.
-    """
     m = _GDRIVE_ID_RE.search(share_url)
     if not m:
         raise ValueError(f"Cannot extract Google Drive file ID from: {share_url}")
     file_id = m.group(1)
     return f"https://drive.google.com/file/d/{file_id}/preview"
 
-def list_library_items() -> list[LibraryItem]:
-    """Fetch library item metadata (no PDF content) ordered by title.
 
-    PDF base64 content is intentionally omitted from the list to keep
-    payloads small.  Call get_library_item() to fetch a single item with
-    its full content when the user opens the viewer.
-    """
+def list_library_items() -> list[LibraryItem]:
     cached, hit = _cache.get("library:all")
     if hit:
         return cached
@@ -916,8 +885,6 @@ def list_library_items() -> list[LibraryItem]:
     for doc in docs:
         data = doc.to_dict() or {}
         item_type = str(data.get("type", "pdf"))
-        # Strip content only for PDF items (large base64 blobs).
-        # URL and gdrive items store short URLs that are safe to include in list responses.
         content_preview = str(data.get("content", "")) if item_type in ("url", "gdrive") else ""
         items.append(LibraryItem(
             id=doc.id,
@@ -935,7 +902,6 @@ def list_library_items() -> list[LibraryItem]:
 
 
 def get_library_item(item_id: str) -> LibraryItem | None:
-    """Fetch a single library item with its full content from Firestore."""
     cache_key = f"library:{item_id}"
     cached, hit = _cache.get(cache_key)
     if hit:
@@ -961,20 +927,12 @@ def get_library_item(item_id: str) -> LibraryItem | None:
 
 
 def create_library_item(payload: LibraryItemCreate) -> LibraryItem:
-    """Store a library item in Firestore.
-
-    For Google Drive items the share URL is downloaded immediately and the
-    raw PDF bytes are base64-encoded and stored as the content — so the
-    document is persisted in the database and no longer depends on the
-    Drive link staying public.
-    """
     _cache.delete("library:all")
-    # Resolve Google Drive share links to base64 PDF content.
     content = payload.content
     stored_type = payload.type
     if payload.type == "gdrive":
         content = _get_gdrive_embed_url(payload.content)
-        stored_type = "gdrive"  # keep type so the viewer knows its origin
+        stored_type = "gdrive"
     client = _get_firestore_client()
     now = datetime.now(UTC)
     doc_ref = client.collection("library").document()
@@ -999,13 +957,11 @@ def create_library_item(payload: LibraryItemCreate) -> LibraryItem:
         createdAt=now.isoformat(),
         updatedAt=now.isoformat(),
     )
-    # Cache the full item immediately so the first viewer fetch is instant
     _cache.set(f"library:{doc_ref.id}", item, _TTL_STATIC)
     return item
 
 
 def update_library_item(item_id: str, payload: LibraryItemUpdate) -> LibraryItem | None:
-    """Partially update a library item in Firestore."""
     _cache.delete("library:all", f"library:{item_id}")
     client = _get_firestore_client()
     doc_ref = client.collection("library").document(item_id)
@@ -1043,7 +999,6 @@ def update_library_item(item_id: str, payload: LibraryItemUpdate) -> LibraryItem
 
 
 def delete_library_item(item_id: str) -> None:
-    """Delete a library item from Firestore."""
     _cache.delete("library:all", f"library:{item_id}")
     client = _get_firestore_client()
     client.collection("library").document(item_id).delete()
@@ -1054,7 +1009,6 @@ def delete_library_item(item_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 def get_course_note(course_id: str) -> CourseNoteItem | None:
-    """Return the note for a course, or None if it doesn't exist."""
     cache_key = f"note:{course_id}"
     cached, hit = _cache.get(cache_key)
     if hit:
@@ -1075,7 +1029,6 @@ def get_course_note(course_id: str) -> CourseNoteItem | None:
 
 
 def upsert_course_note(course_id: str, payload: CourseNoteUpsert) -> CourseNoteItem:
-    """Create or overwrite the note for a course."""
     _cache.delete(f"note:{course_id}")
     client = _get_firestore_client()
     now = datetime.now(UTC)
