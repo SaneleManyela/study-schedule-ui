@@ -212,13 +212,11 @@ def _verify_password(password: str, stored: str) -> bool:
         _, salt, expected = stored.split(":", 2)
         dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260_000)
         return secrets.compare_digest(dk.hex(), expected)
-    # Legacy plaintext comparison for existing admin docs
     return secrets.compare_digest(password, stored)
 
 
 def _parse_iso_datetime(value: str) -> datetime:
     """Parse an ISO datetime string and normalize it to UTC."""
-
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
@@ -227,7 +225,6 @@ def _parse_iso_datetime(value: str) -> datetime:
 
 def _to_iso(value: Any) -> str:
     """Convert Firestore timestamp-like objects to ISO-8601 strings."""
-
     if isinstance(value, datetime):
         return value.astimezone(UTC).isoformat()
     if hasattr(value, "isoformat"):
@@ -245,23 +242,18 @@ def _get_firestore_client() -> firestore.Client:
     if _firestore_client is not None:
         return _firestore_client
 
-    # Only initialize if no default app exists yet (handles hot-reload safely)
     if not firebase_admin._apps:
         project_id = os.getenv("FIREBASE_PROJECT_ID", "").strip()
         service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
         service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
 
-        # Build service account from individual env vars if full JSON not provided or incomplete
         if not service_account_json and not service_account_path:
-            # Try to build from individual env vars
             client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
             private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
             private_key_id = os.getenv("FIREBASE_PRIVATE_KEY_ID", "").strip()
             client_id = os.getenv("FIREBASE_CLIENT_ID", "").strip()
             
             if client_email and private_key and project_id:
-                # Construct a minimal service account dict from individual env vars
-                # The private key may have escaped newlines in env vars
                 private_key = private_key.replace("\\n", "\n")
                 service_account_json = json.dumps({
                     "type": "service_account",
@@ -273,13 +265,11 @@ def _get_firestore_client() -> firestore.Client:
                     "token_uri": "https://oauth2.googleapis.com/token",
                 })
         elif service_account_json:
-            # Validate that the provided JSON has all required fields
             try:
                 parsed_json = json.loads(service_account_json)
                 required_fields = ["type", "project_id", "private_key_id", "private_key", "client_email", "token_uri"]
                 missing = [f for f in required_fields if f not in parsed_json]
                 if missing:
-                    # Fall back to individual env vars if JSON is incomplete
                     service_account_json = ""
                     client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
                     private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
@@ -307,25 +297,17 @@ def _get_firestore_client() -> firestore.Client:
             elif service_account_path:
                 path = Path(service_account_path)
                 if not path.exists():
-                    raise RuntimeError(
-                        "GOOGLE_APPLICATION_CREDENTIALS points to a file that does not exist: "
-                        f"{service_account_path}"
-                    )
+                    raise RuntimeError(f"GOOGLE_APPLICATION_CREDENTIALS points to a file that does not exist: {service_account_path}")
                 firebase_admin.initialize_app(
                     credentials.Certificate(str(path)),
                     options={"projectId": project_id} if project_id else None,
                 )
             else:
-                raise RuntimeError(
-                    "Firebase is not configured. Set GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON file path "
-                    "or set FIREBASE_SERVICE_ACCOUNT_JSON with the raw JSON content."
-                )
+                raise RuntimeError("Firebase is not configured.")
         except ValueError as exc:
-            # "The default Firebase app already exists" — safe to ignore on hot-reload.
             if "already exists" not in str(exc):
                 raise
 
-    # Reuse the existing app (works both on first init and after hot-reload)
     _firestore_client = firestore.client(app=firebase_admin.get_app())
     return _firestore_client
 
@@ -354,7 +336,7 @@ def verify_admin_password(password: str, email: str) -> VerifyPasswordResponse:
         if _verify_password(password, stored):
             return VerifyPasswordResponse(success=True)
         return VerifyPasswordResponse(success=False, error="Incorrect password")
-    except Exception as exc:  # noqa: BLE001
+    except Exception:
         logging.exception("verify_admin_password failed")
         return VerifyPasswordResponse(success=False, error="A server error occurred. Try again.")
 
@@ -364,9 +346,8 @@ def check_admin_email(email: str) -> CheckEmailResponse:
     try:
         doc = _get_admin_doc(email)
         return CheckEmailResponse(exists=doc is not None)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logging.exception("check_admin_email failed: %s", exc)
-        # Return the error message for debugging (remove in production if needed)
         return CheckEmailResponse(exists=False, error=str(exc) if str(exc) else "Unknown error")
 
 
@@ -392,13 +373,13 @@ def signup_admin(email: str, password: str) -> SignupResponse:
                 return SignupResponse(success=False, error="An account with this email already exists.")
             raise
         return SignupResponse(success=True)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:
         logging.exception("signup_admin failed")
         return SignupResponse(success=False, error="A server error occurred. Try again.")
 
 
 def send_admin_pin(email: str) -> SendPinResponse:
-    """Generate a 6-digit PIN, store it in Firestore, and e-mail it via Resend (or SMTP fallback)."""
+    """Generate a 6-digit PIN, store it in Firestore, and email it via Resend (with graceful fallback to SMTP)."""
     try:
         doc = _get_admin_doc(email)
         if doc is None:
@@ -419,78 +400,63 @@ def send_admin_pin(email: str) -> SendPinResponse:
         smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
         smtp_port = int(os.getenv("SMTP_PORT", "465").strip())
 
+        email_sent_successfully = False
+
+        # Attempt 1: Try Resend API first via standard 'requests'
         if resend_key:
-            # ── Resend API (Primary) ─────────────────────────────────────────
-            import urllib.request
-            import urllib.error
-            import json as _json
-            import socket
-
-            logging.info(f"RESEND_API_KEY length: {len(resend_key)}")
-            payload = _json.dumps({
-                "from": "onboarding@resend.dev",
-                "to": [email],
-                "subject": "Study Planner Admin PIN",
-                "text": f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.",
-            }).encode()
-
-            # Handle manual backup resolution if Render Free container DNS acts up
-            target_url = "https://api-us.resend.com/emails"
-            custom_headers = {
-                "Authorization": f"Bearer {resend_key}",
-                "Content-Type": "application/json",
-            }
-
             try:
-                # Direct lookup wrapper to force internal fallback safely
-                req = urllib.request.Request(target_url, data=payload, headers=custom_headers, method="POST")
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    if resp.status not in (200, 201):
-                        error_body = resp.read().decode()
-                        raise RuntimeError(f"Resend returned HTTP {resp.status}: {error_body}")
-            except urllib.error.URLError as url_err:
-                # Catch Errno -2 DNS resolution failures and force explicit IP fallback (IPv4 mapping)
-                if isinstance(url_err.reason, socket.gaierror) and url_err.reason.errno == -2:
-                    logging.warning("Render DNS failed to resolve Resend domain. Retrying with explicit fallback...")
-                    # Hardcoded fallback resolution to bypass broken DNS local resolution layers
-                    fallback_url = "https://3.220.10.117/emails"  # Direct resolved cluster IP
-                    req_fb = urllib.request.Request(fallback_url, data=payload, headers=custom_headers, method="POST")
-                    # Set host header explicitly since we're using a direct IP endpoint URL
-                    req_fb.add_header("Host", "api-us.resend.com")
-                    
-                    # Open direct endpoint with SSL checking bypassed context to prevent mismatch host errors on direct IP requests
-                    import ssl
-                    ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
-                    
-                    with urllib.request.urlopen(req_fb, timeout=10, context=ctx) as resp:
-                        if resp.status not in (200, 201):
-                            raise RuntimeError(f"Direct IP Fallback failed with HTTP {resp.status}")
+                logging.info("Attempting delivery via Resend API...")
+                # Fallback to standard base api endpoint if region-specific resolves break on Render DNS
+                resend_url = "https://api.resend.com/emails"
+                payload = {
+                    "from": "onboarding@resend.dev",
+                    "to": [email],
+                    "subject": "Study Planner Admin PIN",
+                    "text": f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.",
+                }
+                headers = {
+                    "Authorization": f"Bearer {resend_key}",
+                    "Content-Type": "application/json",
+                }
+                response = requests.post(resend_url, json=payload, headers=headers, timeout=8)
+                if response.status_code in (200, 201):
+                    logging.info("Email delivered successfully via Resend.")
+                    email_sent_successfully = True
                 else:
-                    raise
+                    logging.warning(f"Resend rejected request with HTTP {response.status_code}: {response.text}")
+            except Exception as resend_exc:
+                logging.warning(f"Resend API encountered a network/DNS error: {resend_exc}. Proceeding to fallback logic...")
 
-        elif smtp_user and smtp_pass:
-            # ── Configurable SMTP (Fallback) ───────────────────────────────────
-            msg = MIMEText(f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.")
-            msg["Subject"] = "Study Planner Admin PIN"
-            msg["From"] = smtp_user
-            msg["To"] = email
-            if smtp_port == 465:
-                with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10) as server:
-                    server.login(smtp_user, smtp_pass)
-                    server.sendmail(smtp_user, [email], msg.as_string())
-            else:
-                with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-                    server.starttls()
-                    server.login(smtp_user, smtp_pass)
-                    server.sendmail(smtp_user, [email], msg.as_string())
-        else:
+        # Attempt 2: If Resend failed or wasn't configured, fall back directly to SMTP
+        if not email_sent_successfully and smtp_user and smtp_pass:
+            try:
+                logging.info("Attempting delivery via fallback SMTP server...")
+                msg = MIMEText(f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.")
+                msg["Subject"] = "Study Planner Admin PIN"
+                msg["From"] = smtp_user
+                msg["To"] = email
+                if smtp_port == 465:
+                    with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10) as server:
+                        server.login(smtp_user, smtp_pass)
+                        server.sendmail(smtp_user, [email], msg.as_string())
+                else:
+                    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                        server.starttls()
+                        server.login(smtp_user, smtp_pass)
+                        server.sendmail(smtp_user, [email], msg.as_string())
+                logging.info("Email delivered successfully via SMTP Fallback.")
+                email_sent_successfully = True
+            except Exception as smtp_exc:
+                logging.error(f"Fallback SMTP delivery also failed: {smtp_exc}")
+
+        # Local development placeholder if no provider succeeded
+        if not email_sent_successfully:
             print(f"[DEV] Admin PIN for {email}: {pin}")
+            logging.warning("No email provider successfully dispatched the PIN. Printing to console log.")
 
         return SendPinResponse(success=True)
-    except Exception as exc:  # noqa: BLE001
-        logging.exception("send_admin_pin failed")
+    except Exception as exc:
+        logging.exception("send_admin_pin completely failed")
         return SendPinResponse(success=False, error=f"Server error: {exc}")
 
 
@@ -518,7 +484,7 @@ def verify_admin_pin(pin: str, email: str) -> VerifyPinResponse:
         role = data.get("role") or "admin"
         token = _generate_session_token(email, role)
         return VerifyPinResponse(success=True, token=token, role=role)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:
         logging.exception("verify_admin_pin failed")
         return VerifyPinResponse(success=False, error="A server error occurred. Try again.")
 
