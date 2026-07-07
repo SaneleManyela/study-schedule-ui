@@ -180,6 +180,8 @@ def debug_firebase() -> dict:
         "has_resend_api_key": bool(os.getenv("RESEND_API_KEY", "").strip()),
         "has_smtp_user": bool(os.getenv("SMTP_USER", "").strip()),
         "has_smtp_password": bool(os.getenv("SMTP_PASSWORD", "").strip()),
+        "smtp_host": os.getenv("SMTP_HOST", "smtp.gmail.com"),
+        "smtp_port": os.getenv("SMTP_PORT", "465"),
     }
     
     try:

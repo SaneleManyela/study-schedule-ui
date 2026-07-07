@@ -71,7 +71,9 @@ In the Render dashboard, add these environment variables:
 | `SESSION_SECRET` | (Random 32-character string) |
 | `SMTP_USER` | `smanyela44@gmail.com` |
 | `SMTP_PASSWORD` | (Your SMTP password) |
-| `RESEND_API_KEY` | (Your Resend API key) |
+| `SMTP_HOST` | `smtp.gmail.com` (or your custom SMTP server) |
+| `SMTP_PORT` | `465` (or your custom SMTP port) |
+| `RESEND_API_KEY` | (Your Resend API key - optional fallback) |
 
 ### 3 — Get Render API Key and Service ID
 

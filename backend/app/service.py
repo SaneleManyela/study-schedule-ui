@@ -427,14 +427,16 @@ def send_admin_pin(email: str) -> SendPinResponse:
         resend_key = os.getenv("RESEND_API_KEY", "").strip()
         smtp_user = os.getenv("SMTP_USER", "").strip()
         smtp_pass = os.getenv("SMTP_PASSWORD", "").strip()
+        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
+        smtp_port = int(os.getenv("SMTP_PORT", "465").strip())
 
         if smtp_user and smtp_pass:
-            # ── Gmail SMTP (primary) ────────────────────────────────────────
+            # ── Configurable SMTP (primary) ───────────────────────────────────
             msg = MIMEText(f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.")
             msg["Subject"] = "Study Planner Admin PIN"
             msg["From"] = smtp_user
             msg["To"] = email
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
                 server.login(smtp_user, smtp_pass)
                 server.sendmail(smtp_user, [email], msg.as_string())
         elif resend_key:
