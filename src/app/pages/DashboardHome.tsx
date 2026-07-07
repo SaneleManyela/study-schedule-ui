@@ -1,4 +1,3 @@
-// fullText:
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
@@ -31,6 +30,7 @@ import {
   createLanguage,
   createSchedule,
   createStudyPlan,
+  apiRequest,
   type Course,
   type Category,
   type Language,
@@ -70,7 +70,6 @@ async function runSync(): Promise<SyncResult> {
         result.categories++;
       }
     }
-    // Refresh localStorage with real IDs
     const fresh = await listCategories();
     saveLocal(LS_CATEGORIES, fresh);
   } catch (e) { result.errors.push(`Categories: ${e}`); }
@@ -112,8 +111,6 @@ async function runSync(): Promise<SyncResult> {
 
   // ── Schedules ────────────────────────────────────────────────────────────
   try {
-    const local = loadLocal<ScheduleItem>(LS_SCHEDULES).filter((s) => !s.id.includes("-"));
-    // local items created offline have id like "1234567890-0.123" — we skip those already synced
     const localOffline = loadLocal<ScheduleItem>(LS_SCHEDULES).filter((s) => s.id.includes("-"));
     const remoteSchedules = await listSchedules();
     const remoteKeys = new Set(remoteSchedules.map((s) => `${s.title}|${s.startAt}`));
@@ -149,22 +146,20 @@ async function runSync(): Promise<SyncResult> {
   return result;
 }
 
-export function DashboardHome() {
+export function Dashboard() {
   const navigate = useNavigate();
   const [courses, setCourses] = useState<Course[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
 
   useEffect(() => {
-    // ─── ADDITION STARTS HERE ───
-    // apiRequest wrappers automatically detect and handle catastrophic backend failures that return HTML.
-    apiRequest<Course[]>(LS_COURSES)
+    // Uses the now safely exported wrapper from api.ts to prevent HTML/JSON parse crashes
+    apiRequest<Course[]>("/api/courses")
       .then(setCourses)
-      .catch((error) => {
+      .catch((error: any) => {
         setCourses(loadLocal<Course>(LS_COURSES));
-        toast.error(`Learning Preference Fetch Failure: ${error.message}`);
+        toast.error(`Learning Preference Fetch Failure: ${error.message || error}`);
       });
-    // ─── ADDITION ENDS HERE ───
   }, []);
 
   const handleSync = async () => {
@@ -181,7 +176,6 @@ export function DashboardHome() {
       } else {
         toast.error(`Sync completed with ${result.errors.length} error${result.errors.length !== 1 ? "s" : ""}.`);
       }
-      // Refresh course list after sync
       setCourses(loadLocal<Course>(LS_COURSES));
     } catch {
       setSyncStatus("error");
@@ -215,7 +209,7 @@ export function DashboardHome() {
         </p>
       </div>
 
-      {/* Sync to Firestore card */}
+      {/* Sync Section */}
       <Card className="border-border bg-card border-dashed">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -271,7 +265,7 @@ export function DashboardHome() {
         </CardContent>
       </Card>
 
-      {/* Stat cards + Pie chart row */}
+      {/* Grid Layout */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-4">
         {statCards.map(({ label, value, sub, icon: Icon, color }) => (
           <Card key={label} className="border-border bg-card hover:border-primary/50 transition-colors cursor-pointer"
@@ -337,7 +331,7 @@ export function DashboardHome() {
         </Card>
       </div>
 
-      {/* Learning progress */}
+      {/* Course List Progress */}
       <Card className="border-border bg-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
