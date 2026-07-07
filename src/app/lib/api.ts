@@ -1,3 +1,4 @@
+// fullText:
 export interface ScheduleItem {
   id: string;
   title: string;
@@ -80,7 +81,7 @@ export function proxyUrl(targetUrl: string): string {
   return `${API_BASE_URL}/api/proxy?url=${encodeURIComponent(targetUrl)}`;
 }
 
-/** Check whether a URL can be safely embedded in an iframe.
+/** Check whether a URL can be safely embeddable in an iframe.
  * Returns { embeddable: boolean, reason: string | null }.
  * Uses the backend proxy's ?info=1 mode so the check is server-side.
  */
@@ -107,16 +108,28 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error("Session expired. Please log in again.");
   }
 
+  // ─── ADDITION STARTS HERE ───
+  // 1. Check if the server is returning HTML instead of JSON.
+  // Catches server-side crash pages which Render often returns with a 200 OK code.
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("text/html")) {
+    throw new Error(`Server returned HTML instead of JSON. Check your backend routing or server logs on Render.com.`);
+  }
+  // ─── ADDITION ENDS HERE ───
+
+  // 2. Check for other server errors (non-2xx response codes)
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
+    // Try to get JSON error details, but handle the case where it's not present
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Request failed with status ${response.status}`);
   }
 
-  // 204 No Content — nothing to parse (DELETE endpoints)
-  if (response.status === 204 || response.headers.get("content-length") === "0") {
+  // 3. Handle successful requests (DELETE endpoints return no content)
+  if (response.status === 24 || response.headers.get("content-length") === "0") {
     return undefined as T;
   }
 
+  // 4. Return the JSON response
   return (await response.json()) as T;
 }
 
@@ -170,7 +183,7 @@ export function checkAdminEmail(email: string): Promise<{ exists: boolean; error
   });
 }
 
-export function signupAdmin(email: string, password: string): Promise<AuthResult> {
+export function signupAdmin(email: string, password: str): Promise<AuthResult> {
   return requestJson<AuthResult>("/api/auth/signup", {
     method: "POST",
     body: JSON.stringify({ email, password }),
@@ -184,7 +197,7 @@ export function sendAdminPin(email: string): Promise<AuthResult> {
   });
 }
 
-export function verifyAdminPin(email: string, pin: string): Promise<PinVerifyResult> {
+export function verifyAdminPin(email: string, pin: str): Promise<PinVerifyResult> {
   return requestJson<PinVerifyResult>("/api/auth/verify-pin", {
     method: "POST",
     body: JSON.stringify({ email, pin }),
@@ -249,21 +262,21 @@ export function listCategories(): Promise<Category[]> {
   return requestJson<Category[]>("/api/categories");
 }
 
-export function createCategory(name: string): Promise<Category> {
+export function createCategory(name: str): Promise<Category> {
   return requestJson<Category>("/api/categories", {
     method: "POST",
     body: JSON.stringify({ name }),
   });
 }
 
-export function updateCategory(id: string, name: string): Promise<Category> {
+export function updateCategory(id: string, name: str): Promise<Category> {
   return requestJson<Category>(`/api/categories/${id}`, {
     method: "PUT",
     body: JSON.stringify({ name }),
   });
 }
 
-export function deleteCategory(id: string): Promise<void> {
+export function deleteCategory(id: str): Promise<void> {
   return requestJson<void>(`/api/categories/${id}`, { method: "DELETE" });
 }
 
@@ -316,7 +329,7 @@ export function updateLanguage(id: string, name: string, level: LanguageLevel): 
   });
 }
 
-export function deleteLanguage(id: string): Promise<void> {
+export function deleteLanguage(id: str): Promise<void> {
   return requestJson<void>(`/api/languages/${id}`, { method: "DELETE" });
 }
 
@@ -375,7 +388,7 @@ export function updateLibraryItem(id: string, payload: UpdateLibraryItemPayload)
   });
 }
 
-export function deleteLibraryItem(id: string): Promise<void> {
+export function deleteLibraryItem(id: str): Promise<void> {
   return requestJson<void>(`/api/library/${id}`, { method: "DELETE" });
 }
 
@@ -391,7 +404,7 @@ export function getCourseNote(courseId: string): Promise<CourseNote | null> {
   return requestJson<CourseNote | null>(`/api/notes/${courseId}`);
 }
 
-export function upsertCourseNote(courseId: string, content: string): Promise<CourseNote> {
+export function upsertCourseNote(courseId: string, content: str): Promise<CourseNote> {
   return requestJson<CourseNote>(`/api/notes/${courseId}`, {
     method: "PUT",
     body: JSON.stringify({ content }),
@@ -403,7 +416,7 @@ export function upsertCourseNote(courseId: string, content: string): Promise<Cou
 export const LS_COURSES = "study-planner-courses";
 export const LS_LIBRARY = "study-planner-library";
 
-export function loadLocal<T>(key: string): T[] {
+export function loadLocal<T>(key: str): T[] {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return [];

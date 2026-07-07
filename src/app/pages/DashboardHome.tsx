@@ -1,3 +1,4 @@
+// fullText:
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
@@ -23,6 +24,8 @@ import {
   listCourses,
   listCategories,
   listLanguages,
+  listSchedules,
+  listStudyPlans,
   createCourse,
   createCategory,
   createLanguage,
@@ -112,9 +115,7 @@ async function runSync(): Promise<SyncResult> {
     const local = loadLocal<ScheduleItem>(LS_SCHEDULES).filter((s) => !s.id.includes("-"));
     // local items created offline have id like "1234567890-0.123" — we skip those already synced
     const localOffline = loadLocal<ScheduleItem>(LS_SCHEDULES).filter((s) => s.id.includes("-"));
-    const remoteSchedules = await (await fetch("/api/schedules", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("studyPlannerToken") ?? ""}` },
-    })).json() as ScheduleItem[];
+    const remoteSchedules = await listSchedules();
     const remoteKeys = new Set(remoteSchedules.map((s) => `${s.title}|${s.startAt}`));
     for (const s of localOffline) {
       if (!remoteKeys.has(`${s.title}|${s.startAt}`)) {
@@ -127,9 +128,7 @@ async function runSync(): Promise<SyncResult> {
   // ── Study Plans ──────────────────────────────────────────────────────────
   try {
     const localPlans = loadLocal<StudyPlanItem>(LS_PLANS).filter((p) => p.id.includes("-"));
-    const remotePlans = await (await fetch("/api/study-plans", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("studyPlannerToken") ?? ""}` },
-    })).json() as StudyPlanItem[];
+    const remotePlans = await listStudyPlans();
     const remoteKeys = new Set(remotePlans.map((p) => `${p.title}|${p.sessionDate}`));
     for (const p of localPlans) {
       if (!remoteKeys.has(`${p.title}|${p.sessionDate}`)) {
@@ -157,7 +156,15 @@ export function DashboardHome() {
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
 
   useEffect(() => {
-    setCourses(loadLocal<Course>(LS_COURSES));
+    // ─── ADDITION STARTS HERE ───
+    // apiRequest wrappers automatically detect and handle catastrophic backend failures that return HTML.
+    apiRequest<Course[]>(LS_COURSES)
+      .then(setCourses)
+      .catch((error) => {
+        setCourses(loadLocal<Course>(LS_COURSES));
+        toast.error(`Learning Preference Fetch Failure: ${error.message}`);
+      });
+    // ─── ADDITION ENDS HERE ───
   }, []);
 
   const handleSync = async () => {
@@ -390,4 +397,3 @@ export function DashboardHome() {
     </div>
   );
 }
-
