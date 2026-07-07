@@ -14,9 +14,6 @@ from typing import Any
 from pathlib import Path
 
 # ── GLOBAL SOCKET MONKEY-PATCH FOR RENDER NETWORKING ────────────────────────
-# This must be executed at module load time to force Python's network engine
-# to exclusively resolve and connect over IPv4 (AF_INET), completely bypassing
-# Render's unreachable IPv6 interfaces for SMTP, Firestore, and Resend.
 import socket
 _orig_getaddrinfo = socket.getaddrinfo
 def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
@@ -262,17 +259,13 @@ def _get_firestore_client() -> firestore.Client:
         service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
         service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
 
-        # Build service account from individual env vars if full JSON not provided or incomplete
         if not service_account_json and not service_account_path:
-            # Try to build from individual env vars
             client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
             private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
             private_key_id = os.getenv("FIREBASE_PRIVATE_KEY_ID", "").strip()
             client_id = os.getenv("FIREBASE_CLIENT_ID", "").strip()
             
             if client_email and private_key and project_id:
-                # Construct a minimal service account dict from individual env vars
-                # The private key may have escaped newlines in env vars
                 private_key = private_key.replace("\\n", "\n")
                 service_account_json = json.dumps({
                     "type": "service_account",
@@ -284,13 +277,11 @@ def _get_firestore_client() -> firestore.Client:
                     "token_uri": "https://oauth2.googleapis.com/token",
                 })
         elif service_account_json:
-            # Validate that the provided JSON has all required fields
             try:
                 parsed_json = json.loads(service_account_json)
                 required_fields = ["type", "project_id", "private_key_id", "private_key", "client_email", "token_uri"]
                 missing = [f for f in required_fields if f not in parsed_json]
                 if missing:
-                    # Fall back to individual env vars if JSON is incomplete
                     service_account_json = ""
                     client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
                     private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
@@ -332,11 +323,9 @@ def _get_firestore_client() -> firestore.Client:
                     "or set FIREBASE_SERVICE_ACCOUNT_JSON with the raw JSON content."
                 )
         except ValueError as exc:
-            # "The default Firebase app already exists" — safe to ignore on hot-reload.
             if "already exists" not in str(exc):
                 raise
 
-    # Reuse the existing app (works both on first init and after hot-reload)
     _firestore_client = firestore.client(app=firebase_admin.get_app())
     return _firestore_client
 
@@ -377,7 +366,6 @@ def check_admin_email(email: str) -> CheckEmailResponse:
         return CheckEmailResponse(exists=doc is not None)
     except Exception as exc:  # noqa: BLE001
         logging.exception("check_admin_email failed: %s", exc)
-        # Return the error message for debugging (remove in production if needed)
         return CheckEmailResponse(exists=False, error=str(exc) if str(exc) else "Unknown error")
 
 
@@ -436,9 +424,18 @@ def send_admin_pin(email: str) -> SendPinResponse:
             msg["Subject"] = "Study Planner Admin PIN"
             msg["From"] = smtp_user
             msg["To"] = email
-            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
-                server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_user, [email], msg.as_string())
+            
+            # Dynamically switch between standard SMTP (Port 587 STARTTLS) and implicit SSL (Port 465)
+            if smtp_port == 465:
+                with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10) as server:
+                    server.login(smtp_user, smtp_pass)
+                    server.sendmail(smtp_user, [email], msg.as_string())
+            else:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                    server.starttls()  # Safely upgrades unblocked port 587 connections to TLS encryption
+                    server.login(smtp_user, smtp_pass)
+                    server.sendmail(smtp_user, [email], msg.as_string())
+                    
         elif resend_key:
             # ── Resend API (fallback) ───────────────────────────────────────
             import urllib.request
@@ -452,7 +449,7 @@ def send_admin_pin(email: str) -> SendPinResponse:
                 "text": f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.",
             }).encode()
             req = urllib.request.Request(
-                "https://api-us.resend.com/emails",  # Forces IPv4 compatible endpoint
+                "https://api-us.resend.com/emails",
                 data=payload,
                 headers={
                     "Authorization": f"Bearer {resend_key}",
