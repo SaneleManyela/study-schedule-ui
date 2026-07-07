@@ -41,7 +41,6 @@ import { toast } from "sonner";
 
 const CATEGORY_COLORS = ["#4169E1", "#2ecc71", "#e67e22", "#9b59b6", "#1abc9c"];
 
-// localStorage keys for pages that don't export them
 const LS_SCHEDULES = "study-planner-local-schedules";
 const LS_PLANS = "study-planner-local-study-plans";
 
@@ -59,7 +58,6 @@ interface SyncResult {
 async function runSync(): Promise<SyncResult> {
   const result: SyncResult = { categories: 0, languages: 0, courses: 0, schedules: 0, plans: 0, errors: [] };
 
-  // ── Categories ──────────────────────────────────────────────────────────
   try {
     const local = loadLocal<Category>(LS_CATEGORIES).filter((c) => !c.id.startsWith("default-"));
     const remote = await listCategories();
@@ -74,7 +72,6 @@ async function runSync(): Promise<SyncResult> {
     saveLocal(LS_CATEGORIES, fresh);
   } catch (e) { result.errors.push(`Categories: ${e}`); }
 
-  // ── Languages ────────────────────────────────────────────────────────────
   try {
     const local = loadLocal<Language>(LS_LANGUAGES);
     const remote = await listLanguages();
@@ -89,7 +86,6 @@ async function runSync(): Promise<SyncResult> {
     saveLocal(LS_LANGUAGES, fresh);
   } catch (e) { result.errors.push(`Languages: ${e}`); }
 
-  // ── Courses ──────────────────────────────────────────────────────────────
   try {
     const local = loadLocal<Course>(LS_COURSES);
     const remote = await listCourses();
@@ -109,7 +105,6 @@ async function runSync(): Promise<SyncResult> {
     saveLocal(LS_COURSES, fresh);
   } catch (e) { result.errors.push(`Courses: ${e}`); }
 
-  // ── Schedules ────────────────────────────────────────────────────────────
   try {
     const localOffline = loadLocal<ScheduleItem>(LS_SCHEDULES).filter((s) => s.id.includes("-"));
     const remoteSchedules = await listSchedules();
@@ -122,7 +117,6 @@ async function runSync(): Promise<SyncResult> {
     }
   } catch (e) { result.errors.push(`Schedules: ${e}`); }
 
-  // ── Study Plans ──────────────────────────────────────────────────────────
   try {
     const localPlans = loadLocal<StudyPlanItem>(LS_PLANS).filter((p) => p.id.includes("-"));
     const remotePlans = await listStudyPlans();
@@ -146,14 +140,13 @@ async function runSync(): Promise<SyncResult> {
   return result;
 }
 
-export function Dashboard() {
+export function DashboardHome() {
   const navigate = useNavigate();
   const [courses, setCourses] = useState<Course[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
 
   useEffect(() => {
-    // Uses the now safely exported wrapper from api.ts to prevent HTML/JSON parse crashes
     apiRequest<Course[]>("/api/courses")
       .then(setCourses)
       .catch((error: any) => {
@@ -209,7 +202,6 @@ export function Dashboard() {
         </p>
       </div>
 
-      {/* Sync Section */}
       <Card className="border-border bg-card border-dashed">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -265,7 +257,6 @@ export function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Grid Layout */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-4">
         {statCards.map(({ label, value, sub, icon: Icon, color }) => (
           <Card key={label} className="border-border bg-card hover:border-primary/50 transition-colors cursor-pointer"
@@ -331,7 +322,6 @@ export function Dashboard() {
         </Card>
       </div>
 
-      {/* Course List Progress */}
       <Card className="border-border bg-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
