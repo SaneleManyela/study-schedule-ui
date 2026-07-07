@@ -453,7 +453,7 @@ def send_admin_pin(email: str) -> SendPinResponse:
                 "text": f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.",
             }).encode()
             req = urllib.request.Request(
-                "https://api.resend.com/emails",
+                "https://api-us.resend.com/emails",  # Forces IPv4 compatible endpoint
                 data=payload,
                 headers={
                     "Authorization": f"Bearer {resend_key}",
