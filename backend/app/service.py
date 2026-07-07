@@ -22,6 +22,7 @@ import math
 import re
 import requests
 import smtplib
+import socket
 import string
 from email.mime.text import MIMEText
 
@@ -409,74 +410,84 @@ def signup_admin(email: str, password: str) -> SignupResponse:
 
 def send_admin_pin(email: str) -> SendPinResponse:
     """Generate a 6-digit PIN, store it in Firestore, and e-mail it via SMTP (or Resend fallback)."""
-    try:
-        doc = _get_admin_doc(email)
-        if doc is None:
-            return SendPinResponse(success=False, error="Admin config not found")
-        if not email:
-            return SendPinResponse(success=False, error="No email provided")
+    # ── Global Socket Monkey-Patch for Render Network Environments ───────────
+    # Intercepts standard library socket lookups and forces IPv4 (AF_INET) resolution
+    orig_getaddrinfo = socket.getaddrinfo
+    def ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        return orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+    socket.getaddrinfo = ipv4_only_getaddrinfo
 
-        pin = "".join(secrets.choice(string.digits) for _ in range(6))
+    try:
+        doc = _get_admin_doc(email)[cite: 2]
+        if doc is None:[cite: 2]
+            return SendPinResponse(success=False, error="Admin config not found")[cite: 2]
+        if not email:[cite: 2]
+            return SendPinResponse(success=False, error="No email provided")[cite: 2]
+
+        pin = "".join(secrets.choice(string.digits) for _ in range(6))[cite: 2]
         # Store PIN with 10-minute expiry
-        expires_dt = datetime.now(UTC).timestamp() + 600
-        doc.reference.set(
-            {"pin": pin, "pinExpiresAt": datetime.fromtimestamp(expires_dt, UTC).isoformat(), "updatedAt": datetime.now(UTC).isoformat()},
-            merge=True,
+        expires_dt = datetime.now(UTC).timestamp() + 600[cite: 2]
+        doc.reference.set([cite: 2]
+            {"pin": pin, "pinExpiresAt": datetime.fromtimestamp(expires_dt, UTC).isoformat(), "updatedAt": datetime.now(UTC).isoformat()},[cite: 2]
+            merge=True,[cite: 2]
         )
 
-        resend_key = os.getenv("RESEND_API_KEY", "").strip()
-        smtp_user = os.getenv("SMTP_USER", "").strip()
-        smtp_pass = os.getenv("SMTP_PASSWORD", "").strip()
-        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
-        smtp_port = int(os.getenv("SMTP_PORT", "465").strip())
+        resend_key = os.getenv("RESEND_API_KEY", "").strip()[cite: 2]
+        smtp_user = os.getenv("SMTP_USER", "").strip()[cite: 2]
+        smtp_pass = os.getenv("SMTP_PASSWORD", "").strip()[cite: 2]
+        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()[cite: 2]
+        smtp_port = int(os.getenv("SMTP_PORT", "465").strip())[cite: 2]
 
-        if smtp_user and smtp_pass:
+        if smtp_user and smtp_pass:[cite: 2]
             # ── Configurable SMTP (primary) ───────────────────────────────────
-            msg = MIMEText(f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.")
-            msg["Subject"] = "Study Planner Admin PIN"
-            msg["From"] = smtp_user
-            msg["To"] = email
-            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
-                server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_user, [email], msg.as_string())
-        elif resend_key:
+            msg = MIMEText(f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.")[cite: 2]
+            msg["Subject"] = "Study Planner Admin PIN"[cite: 2]
+            msg["From"] = smtp_user[cite: 2]
+            msg["To"] = email[cite: 2]
+            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:[cite: 2]
+                server.login(smtp_user, smtp_pass)[cite: 2]
+                server.sendmail(smtp_user, [email], msg.as_string())[cite: 2]
+        elif resend_key:[cite: 2]
             # ── Resend API (fallback) ───────────────────────────────────────
             import urllib.request
             import urllib.error
             import json as _json
             # Debug: log the key being used (first 10 chars only)
-            logging.info(f"RESEND_API_KEY length: {len(resend_key)}, starts with: {resend_key[:10] if resend_key else 'EMPTY'}")
+            logging.info(f"RESEND_API_KEY length: {len(resend_key)}, starts with: {resend_key[:10] if resend_key else 'EMPTY'}")[cite: 2]
             payload = _json.dumps({
                 "from": "onboarding@resend.dev",
                 "to": [email],
                 "subject": "Study Planner Admin PIN",
                 "text": f"Your Study Planner admin PIN is: {pin}\n\nThis PIN expires in 10 minutes.",
-            }).encode()
-            req = urllib.request.Request(
-                "https://api-us.resend.com/emails",  # Forces IPv4 compatible endpoint
-                data=payload,
+            }).encode()[cite: 2]
+            req = urllib.request.Request([cite: 2]
+                "https://api-us.resend.com/emails",  # Forces IPv4 compatible endpoint[cite: 2]
+                data=payload,[cite: 2]
                 headers={
                     "Authorization": f"Bearer {resend_key}",
                     "Content-Type": "application/json",
                 },
-                method="POST",
+                method="POST",[cite: 2]
             )
             try:
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    if resp.status not in (200, 201):
-                        error_body = resp.read().decode()
-                        raise RuntimeError(f"Resend returned HTTP {resp.status}: {error_body}")
-            except urllib.error.HTTPError as http_err:
-                error_body = http_err.read().decode()
-                raise RuntimeError(f"Resend API error: {error_body}")
+                with urllib.request.urlopen(req, timeout=10) as resp:[cite: 2]
+                    if resp.status not in (200, 201):[cite: 2]
+                        error_body = resp.read().decode()[cite: 2]
+                        raise RuntimeError(f"Resend returned HTTP {resp.status}: {error_body}")[cite: 2]
+            except urllib.error.HTTPError as http_err:[cite: 2]
+                error_body = http_err.read().decode()[cite: 2]
+                raise RuntimeError(f"Resend API error: {error_body}")[cite: 2]
         else:
             # Dev fallback: print PIN to backend console
-            print(f"[DEV] Admin PIN for {email}: {pin}")
+            print(f"[DEV] Admin PIN for {email}: {pin}")[cite: 2]
 
-        return SendPinResponse(success=True)
-    except Exception as exc:  # noqa: BLE001
-        logging.exception("send_admin_pin failed")
-        return SendPinResponse(success=False, error=f"Server error: {exc}")
+        return SendPinResponse(success=True)[cite: 2]
+    except Exception as exc:  # noqa: BLE001[cite: 2]
+        logging.exception("send_admin_pin failed")[cite: 2]
+        return SendPinResponse(success=False, error=f"Server error: {exc}")[cite: 2]
+    finally:
+        # Restore the original address resolution logic to protect other library instances
+        socket.getaddrinfo = orig_getaddrinfo
 
 
 def verify_admin_pin(pin: str, email: str) -> VerifyPinResponse:
