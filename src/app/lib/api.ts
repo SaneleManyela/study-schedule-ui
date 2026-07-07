@@ -1,4 +1,3 @@
-// fullText:
 export interface ScheduleItem {
   id: string;
   title: string;
@@ -43,10 +42,6 @@ export interface CreateStudyPlanPayload {
   resourceUrl?: string;
 }
 
-// Empty string = relative URLs, proxied by Vite in dev and nginx in production.
-// Set VITE_API_BASE_URL at build time when the backend is on a separate origin
-// (e.g. a dedicated cloud server). Using relative URLs is always preferred
-// because it prevents mixed-content blocks when the frontend is on HTTPS.
 const API_BASE_URL =
   ((import.meta as unknown as { env?: Record<string, string | undefined> }).env
     ?.VITE_API_BASE_URL as string | undefined)?.trim() ??
@@ -71,20 +66,10 @@ export function clearAuthSession(): void {
   localStorage.removeItem("studyPlannerRole");
 }
 
-/** Build a proxy URL that fetches `targetUrl` server-side, stripping X-Frame-Options.
- *
- * Returns a relative path (/api/proxy?url=...) when API_BASE_URL is not set,
- * so the browser resolves it against the current page origin. This prevents
- * mixed-content errors when the frontend is served over HTTPS.
- */
 export function proxyUrl(targetUrl: string): string {
   return `${API_BASE_URL}/api/proxy?url=${encodeURIComponent(targetUrl)}`;
 }
 
-/** Check whether a URL can be safely embeddable in an iframe.
- * Returns { embeddable: boolean, reason: string | null }.
- * Uses the backend proxy's ?info=1 mode so the check is server-side.
- */
 export async function checkEmbeddable(targetUrl: string): Promise<{ embeddable: boolean; reason: string | null }> {
   const resp = await fetch(`${API_BASE_URL}/api/proxy?url=${encodeURIComponent(targetUrl)}&info=1`);
   if (!resp.ok) return { embeddable: false, reason: `proxy check failed (${resp.status})` };
@@ -108,29 +93,29 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error("Session expired. Please log in again.");
   }
 
-  // ─── ADDITION STARTS HERE ───
-  // 1. Check if the server is returning HTML instead of JSON.
-  // Catches server-side crash pages which Render often returns with a 200 OK code.
+  // Intercept backend crashes returning generic HTML templates instead of clean JSON data
   const contentType = response.headers.get("content-type");
   if (contentType && contentType.includes("text/html")) {
-    throw new Error(`Server returned HTML instead of JSON. Check your backend routing or server logs on Render.com.`);
+    throw new Error("Server returned HTML instead of JSON. Check your backend routing or server logs on Render.com.");
   }
-  // ─── ADDITION ENDS HERE ───
 
-  // 2. Check for other server errors (non-2xx response codes)
   if (!response.ok) {
-    // Try to get JSON error details, but handle the case where it's not present
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error || `Request failed with status ${response.status}`);
   }
 
-  // 3. Handle successful requests (DELETE endpoints return no content)
-  if (response.status === 24 || response.headers.get("content-length") === "0") {
+  if (response.status === 204 || response.headers.get("content-length") === "0") {
     return undefined as T;
   }
 
-  // 4. Return the JSON response
   return (await response.json()) as T;
+}
+
+/**
+ * Clean wrapper function imported by Dashboard layouts
+ */
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(path, init);
 }
 
 export function listSchedules(): Promise<ScheduleItem[]> {
@@ -183,7 +168,7 @@ export function checkAdminEmail(email: string): Promise<{ exists: boolean; error
   });
 }
 
-export function signupAdmin(email: string, password: str): Promise<AuthResult> {
+export function signupAdmin(email: string, password: string): Promise<AuthResult> {
   return requestJson<AuthResult>("/api/auth/signup", {
     method: "POST",
     body: JSON.stringify({ email, password }),
@@ -197,7 +182,7 @@ export function sendAdminPin(email: string): Promise<AuthResult> {
   });
 }
 
-export function verifyAdminPin(email: string, pin: str): Promise<PinVerifyResult> {
+export function verifyAdminPin(email: string, pin: string): Promise<PinVerifyResult> {
   return requestJson<PinVerifyResult>("/api/auth/verify-pin", {
     method: "POST",
     body: JSON.stringify({ email, pin }),
@@ -262,21 +247,21 @@ export function listCategories(): Promise<Category[]> {
   return requestJson<Category[]>("/api/categories");
 }
 
-export function createCategory(name: str): Promise<Category> {
+export function createCategory(name: string): Promise<Category> {
   return requestJson<Category>("/api/categories", {
     method: "POST",
     body: JSON.stringify({ name }),
   });
 }
 
-export function updateCategory(id: string, name: str): Promise<Category> {
+export function updateCategory(id: string, name: string): Promise<Category> {
   return requestJson<Category>(`/api/categories/${id}`, {
     method: "PUT",
     body: JSON.stringify({ name }),
   });
 }
 
-export function deleteCategory(id: str): Promise<void> {
+export function deleteCategory(id: string): Promise<void> {
   return requestJson<void>(`/api/categories/${id}`, { method: "DELETE" });
 }
 
@@ -329,7 +314,7 @@ export function updateLanguage(id: string, name: string, level: LanguageLevel): 
   });
 }
 
-export function deleteLanguage(id: str): Promise<void> {
+export function deleteLanguage(id: string): Promise<void> {
   return requestJson<void>(`/api/languages/${id}`, { method: "DELETE" });
 }
 
@@ -340,8 +325,7 @@ export interface LibraryItem {
   courseId: string;
   courseName: string;
   title: string;
-  type: LibraryItemType;
-  /** base64 data URI for PDFs, plain URL for links */
+  type: string;
   content: string;
   language?: string | null;
   createdAt: string;
@@ -352,7 +336,7 @@ export interface CreateLibraryItemPayload {
   courseId: string;
   courseName: string;
   title: string;
-  type: LibraryItemType;
+  type: string;
   content: string;
   language?: string | null;
 }
@@ -361,7 +345,7 @@ export interface UpdateLibraryItemPayload {
   courseId?: string;
   courseName?: string;
   title?: string;
-  type?: LibraryItemType;
+  type?: string;
   content?: string;
   language?: string | null;
 }
@@ -388,7 +372,7 @@ export function updateLibraryItem(id: string, payload: UpdateLibraryItemPayload)
   });
 }
 
-export function deleteLibraryItem(id: str): Promise<void> {
+export function deleteLibraryItem(id: string): Promise<void> {
   return requestJson<void>(`/api/library/${id}`, { method: "DELETE" });
 }
 
@@ -404,7 +388,7 @@ export function getCourseNote(courseId: string): Promise<CourseNote | null> {
   return requestJson<CourseNote | null>(`/api/notes/${courseId}`);
 }
 
-export function upsertCourseNote(courseId: string, content: str): Promise<CourseNote> {
+export function upsertCourseNote(courseId: string, content: string): Promise<CourseNote> {
   return requestJson<CourseNote>(`/api/notes/${courseId}`, {
     method: "PUT",
     body: JSON.stringify({ content }),
@@ -416,7 +400,7 @@ export function upsertCourseNote(courseId: string, content: str): Promise<Course
 export const LS_COURSES = "study-planner-courses";
 export const LS_LIBRARY = "study-planner-library";
 
-export function loadLocal<T>(key: str): T[] {
+export function loadLocal<T>(key: string): T[] {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return [];
