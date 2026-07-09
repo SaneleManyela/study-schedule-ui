@@ -44,6 +44,7 @@ from .models import (
 )
 from .service import (
     create_schedule, create_study_plan, list_schedules, list_study_plans,
+    update_schedule, delete_schedule, update_study_plan, delete_study_plan,
     verify_admin_password, send_admin_pin, verify_admin_pin,
     check_admin_email, signup_admin,
     list_courses, create_course, update_course, delete_course,
@@ -233,6 +234,42 @@ def post_study_plan(payload: StudyPlanCreate, _s: dict = Depends(require_admin))
     except Exception as exc:
         logger.error("Failed to create study plan: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create study plan: {exc}") from exc
+
+
+@app.put("/api/schedules/{schedule_id}", response_model=ScheduleItem)
+def put_schedule(schedule_id: str, payload: dict, _s: dict = Depends(require_admin)) -> ScheduleItem:
+    try:
+        return update_schedule(schedule_id, payload)
+    except Exception as exc:
+        logger.error("Failed to update schedule %r: %s", schedule_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update schedule: {exc}") from exc
+
+
+@app.delete("/api/schedules/{schedule_id}", status_code=204)
+def remove_schedule(schedule_id: str, _s: dict = Depends(require_admin)) -> None:
+    try:
+        delete_schedule(schedule_id)
+    except Exception as exc:
+        logger.error("Failed to delete schedule %r: %s", schedule_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete schedule: {exc}") from exc
+
+
+@app.put("/api/study-plans/{plan_id}", response_model=StudyPlanItem)
+def put_study_plan(plan_id: str, payload: dict, _s: dict = Depends(require_admin)) -> StudyPlanItem:
+    try:
+        return update_study_plan(plan_id, payload)
+    except Exception as exc:
+        logger.error("Failed to update study plan %r: %s", plan_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update study plan: {exc}") from exc
+
+
+@app.delete("/api/study-plans/{plan_id}", status_code=204)
+def remove_study_plan(plan_id: str, _s: dict = Depends(require_admin)) -> None:
+    try:
+        delete_study_plan(plan_id)
+    except Exception as exc:
+        logger.error("Failed to delete study plan %r: %s", plan_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete study plan: {exc}") from exc
 
 
 @app.post("/api/auth/verify-password", response_model=VerifyPasswordResponse)

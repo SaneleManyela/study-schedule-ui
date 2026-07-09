@@ -621,6 +621,95 @@ def create_study_plan(payload: StudyPlanCreate) -> StudyPlanItem:
     )
 
 
+def update_schedule(schedule_id: str, payload: dict) -> ScheduleItem:
+    """Update a schedule entry in Firestore."""
+    _cache.delete("schedules:all")
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    doc_ref = client.collection("schedules").document(schedule_id)
+    
+    updates: dict = {"updatedAt": now}
+    if payload.get("title") is not None:
+        updates["title"] = payload["title"].strip()
+    if payload.get("description") is not None:
+        updates["description"] = payload["description"].strip()
+    if payload.get("startAt") is not None:
+        updates["startAt"] = _parse_iso_datetime(payload["startAt"])
+    if payload.get("endAt") is not None:
+        updates["endAt"] = _parse_iso_datetime(payload["endAt"])
+    if payload.get("resourceTitle") is not None:
+        updates["resourceTitle"] = payload["resourceTitle"].strip() if payload["resourceTitle"] else None
+    if payload.get("resourceUrl") is not None:
+        updates["resourceUrl"] = payload["resourceUrl"].strip() if payload["resourceUrl"] else None
+    
+    doc_ref.set(updates, merge=True)
+    data = doc_ref.get().to_dict() or {}
+    return ScheduleItem(
+        id=schedule_id,
+        title=str(data.get("title", "")),
+        description=str(data.get("description", "")),
+        startAt=_to_iso(data.get("startAt")),
+        endAt=_to_iso(data.get("endAt")),
+        resourceTitle=str(data.get("resourceTitle")) if data.get("resourceTitle") is not None else None,
+        resourceUrl=str(data.get("resourceUrl")) if data.get("resourceUrl") is not None else None,
+        createdAt=_to_iso(data.get("createdAt")),
+        updatedAt=_to_iso(data.get("updatedAt")),
+    )
+
+
+def delete_schedule(schedule_id: str) -> None:
+    """Delete a schedule entry from Firestore."""
+    _cache.delete("schedules:all")
+    client = _get_firestore_client()
+    client.collection("schedules").document(schedule_id).delete()
+
+
+def update_study_plan(plan_id: str, payload: dict) -> StudyPlanItem:
+    """Update a study plan entry in Firestore."""
+    _cache.delete("study_plans:all")
+    client = _get_firestore_client()
+    now = datetime.now(UTC)
+    doc_ref = client.collection("study_plans").document(plan_id)
+    
+    updates: dict = {"updatedAt": now}
+    if payload.get("title") is not None:
+        updates["title"] = payload["title"].strip()
+    if payload.get("goal") is not None:
+        updates["goal"] = payload["goal"].strip()
+    if payload.get("sessionDate") is not None:
+        updates["sessionDate"] = payload["sessionDate"]
+    if payload.get("durationMinutes") is not None:
+        updates["durationMinutes"] = payload["durationMinutes"]
+    if payload.get("notes") is not None:
+        updates["notes"] = payload["notes"].strip()
+    if payload.get("resourceTitle") is not None:
+        updates["resourceTitle"] = payload["resourceTitle"].strip() if payload["resourceTitle"] else None
+    if payload.get("resourceUrl") is not None:
+        updates["resourceUrl"] = payload["resourceUrl"].strip() if payload["resourceUrl"] else None
+    
+    doc_ref.set(updates, merge=True)
+    data = doc_ref.get().to_dict() or {}
+    return StudyPlanItem(
+        id=plan_id,
+        title=str(data.get("title", "")),
+        goal=str(data.get("goal", "")),
+        sessionDate=str(data.get("sessionDate", "")),
+        durationMinutes=int(data.get("durationMinutes", 0)),
+        notes=str(data.get("notes", "")),
+        resourceTitle=str(data.get("resourceTitle")) if data.get("resourceTitle") is not None else None,
+        resourceUrl=str(data.get("resourceUrl")) if data.get("resourceUrl") is not None else None,
+        createdAt=_to_iso(data.get("createdAt")),
+        updatedAt=_to_iso(data.get("updatedAt")),
+    )
+
+
+def delete_study_plan(plan_id: str) -> None:
+    """Delete a study plan entry from Firestore."""
+    _cache.delete("study_plans:all")
+    client = _get_firestore_client()
+    client.collection("study_plans").document(plan_id).delete()
+
+
 # ---------------------------------------------------------------------------
 # Courses
 # ---------------------------------------------------------------------------

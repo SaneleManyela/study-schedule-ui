@@ -140,6 +140,28 @@ export function createStudyPlan(payload: CreateStudyPlanPayload): Promise<StudyP
   });
 }
 
+export function updateStudyPlan(id: string, payload: Partial<CreateStudyPlanPayload>): Promise<StudyPlanItem> {
+  return requestJson<StudyPlanItem>(`/api/study-plans/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteStudyPlan(id: string): Promise<void> {
+  return requestJson<void>(`/api/study-plans/${id}`, { method: "DELETE" });
+}
+
+export function updateSchedule(id: string, payload: Partial<CreateSchedulePayload>): Promise<ScheduleItem> {
+  return requestJson<ScheduleItem>(`/api/schedules/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteSchedule(id: string): Promise<void> {
+  return requestJson<void>(`/api/schedules/${id}`, { method: "DELETE" });
+}
+
 export interface AuthResult {
   success: boolean;
   error?: string | null;

@@ -11,46 +11,60 @@ import {
   startOfMonth,
   endOfMonth,
   eachDayOfInterval,
-  getMonth,
-  getYear,
   addMonths,
   subMonths,
 } from "date-fns";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import {
-  loadLocal,
-  saveLocal,
-  createSchedule,
-  type ScheduleItem,
-} from "../lib/api";
+import { Textarea } from "../components/ui/textarea";
+import { useStudy } from "../lib/study-context";
 import { toast } from "sonner";
 import { cn } from "../components/ui/utils";
-
-const LS_SCHEDULES = "study-planner-local-schedules";
+import { type StudyPlanItem, type ScheduleItem } from "../lib/api";
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7am–7pm
 
 export function StudyCalendarPage() {
+  const {
+    schedules,
+    studyPlans,
+    useRemote,
+    addSchedule,
+    updateSchedule,
+    removeSchedule,
+    addStudyPlan,
+    updateStudyPlan,
+    removeStudyPlan,
+  } = useStudy();
+
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [miniMonth, setMiniMonth] = useState(new Date());
-  const [schedules, setSchedules] = useState<ScheduleItem[]>(() => loadLocal<ScheduleItem>(LS_SCHEDULES));
   const [newEventOpen, setNewEventOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDate, setNewDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [newStart, setNewStart] = useState("09:00");
   const [newEnd, setNewEnd] = useState("10:00");
 
+  // Edit states for schedules
+  const [editingSchedule, setEditingSchedule] = useState<ScheduleItem | null>(null);
+  const [editScheduleTitle, setEditScheduleTitle] = useState("");
+  const [editScheduleDate, setEditScheduleDate] = useState("");
+  const [editScheduleStart, setEditScheduleStart] = useState("");
+  const [editScheduleEnd, setEditScheduleEnd] = useState("");
+
+  // Edit states for study plans
+  const [editingPlan, setEditingPlan] = useState<StudyPlanItem | null>(null);
+  const [editPlanTitle, setEditPlanTitle] = useState("");
+  const [editPlanGoal, setEditPlanGoal] = useState("");
+  const [editPlanDate, setEditPlanDate] = useState("");
+  const [editPlanDuration, setEditPlanDuration] = useState("");
+  const [editPlanNotes, setEditPlanNotes] = useState("");
+
   const weekStart = startOfWeek(currentWeek, { weekStartsOn: 0 }); // Sunday
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)); // Sun–Sat
-
-  const persist = (next: ScheduleItem[]) => {
-    setSchedules(next);
-    saveLocal(LS_SCHEDULES, next);
-  };
 
   const openDialogForSlot = (day: Date, hour?: number) => {
     setNewDate(format(day, "yyyy-MM-dd"));
@@ -67,8 +81,9 @@ export function StudyCalendarPage() {
     const startAt = `${newDate}T${newStart}:00`;
     const endAt = `${newDate}T${newEnd}:00`;
     try {
+      const { createSchedule } = await import("../lib/api");
       const saved = await createSchedule({ title: newTitle.trim(), description: "", startAt, endAt });
-      persist([saved, ...schedules]);
+      addSchedule(saved);
     } catch {
       // Backend unreachable — save locally
       const item: ScheduleItem = {
@@ -80,7 +95,7 @@ export function StudyCalendarPage() {
         createdAt: now,
         updatedAt: now,
       };
-      persist([item, ...schedules]);
+      addSchedule(item);
     }
     setNewEventOpen(false);
     setNewTitle("");
@@ -96,6 +111,147 @@ export function StudyCalendarPage() {
   // Events per day slot
   const eventsForDay = (day: Date) =>
     schedules.filter((s) => isSameDay(parseISO(s.startAt), day));
+
+  // Study plans per day
+  const plansForDay = (day: Date) =>
+    studyPlans.filter((p) => p.sessionDate === format(day, "yyyy-MM-dd"));
+
+  // Edit schedule handlers
+  const openEditSchedule = (schedule: ScheduleItem) => {
+    setEditingSchedule(schedule);
+    setEditScheduleTitle(schedule.title);
+    setEditScheduleDate(schedule.startAt.slice(0, 10));
+    setEditScheduleStart(schedule.startAt.slice(11, 16));
+    setEditScheduleEnd(schedule.endAt.slice(11, 16));
+  };
+
+  const closeEditSchedule = () => {
+    setEditingSchedule(null);
+    setEditScheduleTitle("");
+    setEditScheduleDate("");
+    setEditScheduleStart("");
+    setEditScheduleEnd("");
+  };
+
+  const handleUpdateSchedule = async () => {
+    if (!editingSchedule) return;
+    if (!editScheduleTitle.trim()) {
+      toast.error("Title is required.");
+      return;
+    }
+    const startAt = `${editScheduleDate}T${editScheduleStart}:00`;
+    const endAt = `${editScheduleDate}T${editScheduleEnd}:00`;
+    const updated: ScheduleItem = {
+      ...editingSchedule,
+      title: editScheduleTitle.trim(),
+      startAt,
+      endAt,
+      updatedAt: new Date().toISOString(),
+    };
+    if (useRemote) {
+      try {
+        const { updateSchedule: apiUpdate } = await import("../lib/api");
+        const saved = await apiUpdate(editingSchedule.id, {
+          title: editScheduleTitle.trim(),
+          startAt,
+          endAt,
+        });
+        updateSchedule(saved);
+      } catch {
+        updateSchedule(updated);
+      }
+    } else {
+      updateSchedule(updated);
+    }
+    closeEditSchedule();
+    toast.success("Schedule updated.");
+  };
+
+  const handleDeleteSchedule = async (id: string) => {
+    if (useRemote) {
+      try {
+        const { deleteSchedule: apiDelete } = await import("../lib/api");
+        await apiDelete(id);
+      } catch {
+        // Continue with local delete
+      }
+    }
+    removeSchedule(id);
+    toast.success("Schedule deleted.");
+  };
+
+  // Edit study plan handlers
+  const openEditPlan = (plan: StudyPlanItem) => {
+    setEditingPlan(plan);
+    setEditPlanTitle(plan.title);
+    setEditPlanGoal(plan.goal);
+    setEditPlanDate(plan.sessionDate);
+    setEditPlanDuration(String(plan.durationMinutes));
+    setEditPlanNotes(plan.notes);
+  };
+
+  const closeEditPlan = () => {
+    setEditingPlan(null);
+    setEditPlanTitle("");
+    setEditPlanGoal("");
+    setEditPlanDate("");
+    setEditPlanDuration("");
+    setEditPlanNotes("");
+  };
+
+  const handleUpdatePlan = async () => {
+    if (!editingPlan) return;
+    const duration = Number.parseInt(editPlanDuration, 10);
+    if (!editPlanTitle.trim() || !editPlanGoal.trim()) {
+      toast.error("Title and goal are required.");
+      return;
+    }
+    if (!Number.isFinite(duration) || duration <= 0) {
+      toast.error("Duration must be a positive number.");
+      return;
+    }
+    const updated: StudyPlanItem = {
+      ...editingPlan,
+      title: editPlanTitle.trim(),
+      goal: editPlanGoal.trim(),
+      sessionDate: editPlanDate,
+      durationMinutes: duration,
+      notes: editPlanNotes.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (useRemote) {
+      try {
+        const { updateStudyPlan: apiUpdate } = await import("../lib/api");
+        const saved = await apiUpdate(editingPlan.id, {
+          title: editPlanTitle.trim(),
+          goal: editPlanGoal.trim(),
+          sessionDate: editPlanDate,
+          durationMinutes: duration,
+          notes: editPlanNotes.trim(),
+        });
+        updateStudyPlan(saved);
+      } catch {
+        updateStudyPlan(updated);
+      }
+    } else {
+      updateStudyPlan(updated);
+    }
+    closeEditPlan();
+    toast.success("Study plan updated.");
+  };
+
+  const handleDeletePlan = async (id: string) => {
+    if (useRemote) {
+      try {
+        const { deleteStudyPlan: apiDelete } = await import("../lib/api");
+        await apiDelete(id);
+      } catch {
+        // Continue with local delete
+      }
+    }
+    removeStudyPlan(id);
+    toast.success("Study plan deleted.");
+  };
 
   return (
     <div className="flex gap-4 h-full">
@@ -122,6 +278,7 @@ export function StudyCalendarPage() {
             {Array.from({ length: miniPadStart }, (_, i) => <span key={`pad-${i}`} />)}
             {miniDays.map((day) => {
               const hasEvent = schedules.some((s) => isSameDay(parseISO(s.startAt), day));
+              const hasPlan = studyPlans.some((p) => p.sessionDate === format(day, "yyyy-MM-dd"));
               const isCurrent = isToday(day);
               const isSelected = isSameDay(day, currentWeek);
               return (
@@ -136,7 +293,7 @@ export function StudyCalendarPage() {
                   )}
                 >
                   {format(day, "d")}
-                  {hasEvent && (
+                  {(hasEvent || hasPlan) && (
                     <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-primary" />
                   )}
                 </button>
@@ -228,10 +385,25 @@ export function StudyCalendarPage() {
                       {dayEvents.map((ev) => (
                         <div
                           key={ev.id}
-                          className="text-[11px] bg-primary/80 text-primary-foreground rounded px-1.5 py-0.5 truncate leading-tight mb-0.5"
-                          title={ev.title}
+                          className="text-[11px] bg-primary/80 text-primary-foreground rounded px-1.5 py-0.5 truncate leading-tight mb-0.5 flex items-center justify-between"
                         >
-                          {ev.title}
+                          <span className="flex-1 truncate" title={ev.title}>{ev.title}</span>
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEditSchedule(ev); }}
+                              className="p-0.5 text-primary-foreground hover:text-white"
+                              title="Edit schedule"
+                            >
+                              <Pencil className="h-2.5 w-2.5" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDeleteSchedule(ev.id); }}
+                              className="p-0.5 text-primary-foreground hover:text-white"
+                              title="Delete schedule"
+                            >
+                              <Trash2 className="h-2.5 w-2.5" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -274,6 +446,122 @@ export function StudyCalendarPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewEventOpen(false)}>Cancel</Button>
             <Button onClick={handleAddEvent} className="bg-primary hover:bg-primary/80">Add Event</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Schedule Dialog */}
+      <Dialog open={!!editingSchedule} onOpenChange={(open) => !open && closeEditSchedule()}>
+        <DialogContent className="bg-card border-border sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Schedule</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Title</Label>
+              <Input
+                value={editScheduleTitle}
+                onChange={(e) => setEditScheduleTitle(e.target.value)}
+                placeholder="Study Session"
+                className="bg-secondary border-border"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={editScheduleDate}
+                onChange={(e) => setEditScheduleDate(e.target.value)}
+                className="bg-secondary border-border"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Start</Label>
+                <Input
+                  type="time"
+                  value={editScheduleStart}
+                  onChange={(e) => setEditScheduleStart(e.target.value)}
+                  className="bg-secondary border-border"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>End</Label>
+                <Input
+                  type="time"
+                  value={editScheduleEnd}
+                  onChange={(e) => setEditScheduleEnd(e.target.value)}
+                  className="bg-secondary border-border"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditSchedule}>Cancel</Button>
+            <Button onClick={handleUpdateSchedule} className="bg-primary hover:bg-primary/80">Update</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Study Plan Dialog */}
+      <Dialog open={!!editingPlan} onOpenChange={(open) => !open && closeEditPlan()}>
+        <DialogContent className="bg-card border-border sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Study Plan</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Title</Label>
+              <Input
+                value={editPlanTitle}
+                onChange={(e) => setEditPlanTitle(e.target.value)}
+                placeholder="Exam Week Plan"
+                className="bg-secondary border-border"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Goal</Label>
+              <Textarea
+                value={editPlanGoal}
+                onChange={(e) => setEditPlanGoal(e.target.value)}
+                placeholder="Finish chapters 3-5..."
+                rows={3}
+                className="bg-secondary border-border resize-none"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Session Date</Label>
+              <Input
+                type="date"
+                value={editPlanDate}
+                onChange={(e) => setEditPlanDate(e.target.value)}
+                className="bg-secondary border-border"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Duration (minutes)</Label>
+              <Input
+                type="number"
+                value={editPlanDuration}
+                onChange={(e) => setEditPlanDuration(e.target.value)}
+                min={1}
+                className="bg-secondary border-border"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea
+                value={editPlanNotes}
+                onChange={(e) => setEditPlanNotes(e.target.value)}
+                placeholder="Notes..."
+                rows={2}
+                className="bg-secondary border-border resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditPlan}>Cancel</Button>
+            <Button onClick={handleUpdatePlan} className="bg-primary hover:bg-primary/80">Update</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
