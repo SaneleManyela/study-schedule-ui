@@ -36,6 +36,7 @@ export function LoginPage() {
         setStep(result.exists ? "login" : "signup");
       }
     } catch {
+      console.log(result);
       setError("Could not reach the server. Please try again.");
     } finally {
       setIsLoading(false);
