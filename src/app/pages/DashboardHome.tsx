@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Newspaper,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -193,6 +194,15 @@ export function DashboardHome() {
     { label: "Certificates Earned", value: certifications, sub: "Certificates Collected", icon: Award, color: "text-yellow-400" },
   ];
 
+  const quickLinks = [
+    {
+      label: "Newsletters",
+      description: "Curated market and tech reads",
+      icon: Newspaper,
+      action: () => navigate("/admin/newsletters"),
+    },
+  ];
+
   return (
     <div className="space-y-8">
       <div>
@@ -279,6 +289,35 @@ export function DashboardHome() {
             </CardContent>
           </Card>
         ))}
+
+        <Card className="border-border bg-card md:row-span-1">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Quick Access</CardTitle>
+            <CardDescription className="text-xs">Shortcuts</CardDescription>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="space-y-2">
+              {quickLinks.map(({ label, description, icon: Icon, action }) => (
+                <button
+                  key={label}
+                  onClick={action}
+                  className="flex w-full items-center justify-between rounded-lg border border-border bg-secondary/30 px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-secondary"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-md bg-primary/10 p-2 text-primary">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{label}</p>
+                      <p className="text-xs text-muted-foreground">{description}</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         <Card className="border-border bg-card md:row-span-1">
           <CardHeader className="pb-2">

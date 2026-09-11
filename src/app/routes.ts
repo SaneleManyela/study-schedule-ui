@@ -11,6 +11,7 @@ import { CourseNotesPage } from "./pages/CourseNotesPage";
 import { CategoriesPage } from "./pages/CategoriesPage";
 import { CategoryDetailPage } from "./pages/CategoryDetailPage";
 import { LanguagesPage } from "./pages/LanguagesPage";
+import { NewslettersPage } from "./pages/NewslettersPage";
 
 function getSession() {
   const loggedIn = localStorage.getItem("studyPlannerAdmin") === "true";
@@ -54,6 +55,7 @@ export const router = createHashRouter(
         { path: "calendar", Component: StudyCalendarPage },
         { path: "study-plan", Component: StudyPlanPage },
         { path: "library", Component: LibraryPage },
+        { path: "newsletters", Component: NewslettersPage },
         { path: "categories", Component: CategoriesPage },
         { path: "categories/:categoryName", Component: CategoryDetailPage },
         { path: "languages", Component: LanguagesPage },

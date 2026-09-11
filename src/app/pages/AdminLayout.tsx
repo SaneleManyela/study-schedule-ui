@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   Tag,
+  Newspaper,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { cn } from "../components/ui/utils";
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { label: "Study Calendar", to: "/admin/calendar", icon: CalendarDays, end: false },
   { label: "Study Plan", to: "/admin/study-plan", icon: ClipboardList, end: false },
   { label: "Library", to: "/admin/library", icon: Library, end: false },
+  { label: "Newsletters", to: "/admin/newsletters", icon: Newspaper, end: false },
 ];
 
 export function AdminLayout() {
